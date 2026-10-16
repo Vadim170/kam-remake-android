@@ -4,7 +4,7 @@ interface
 uses
   {$IFDEF MSWindows} Windows, {$ENDIF}
   {$IFDEF FPC}
-  {$IFDEF Unix} LCLIntF, LCLType, {$ENDIF}
+  {$IFDEF Unix} LCLIntf, LCLType, {$ENDIF}
   {$ENDIF}
   Classes, Controls,
   KM_Controls, KM_ControlsBase,

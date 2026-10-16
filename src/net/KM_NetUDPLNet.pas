@@ -2,7 +2,7 @@ unit KM_NetUDPLNet;
 {$I KaM_Remake.inc}
 interface
 uses
-  Classes, Math, SysUtils, LNet;
+  Classes, Math, SysUtils, LNet, KM_CommonTypes;
 
 
 type
@@ -15,7 +15,7 @@ type
     fOnError: TGetStrProc;
     fOnRecieveData: TNotifyAddressDataEvent;
     procedure HandleReceive(aSocket: TLSocket);
-    procedure HandleError(const aMsg: string; aSocket: TLSocket);
+    procedure HandleError(const aMsg: AnsiString; aSocket: TLSocket);
   public
     constructor Create;
     destructor Destroy; override;
@@ -87,7 +87,7 @@ begin
 end;
 
 
-procedure TKMNetUDPLNet.HandleError(const aMsg: string; aSocket: TLSocket);
+procedure TKMNetUDPLNet.HandleError(const aMsg: AnsiString; aSocket: TLSocket);
 begin
   fOnError('LNet UDP Error: ' + aMsg);
 end;

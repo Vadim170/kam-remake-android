@@ -1,5 +1,8 @@
 unit KM_Main;
 {$I KaM_Remake.inc}
+{$IFDEF ANDROID}
+{$I KM_MainAndroid.inc}
+{$ELSE}
 interface
 uses
   {$IFDEF MSWindows} Windows, {$ENDIF}
@@ -573,6 +576,8 @@ procedure TKMMain.DoIdle(Sender: TObject; var Done: Boolean);
 const
   MAX_TIME_BETWEEN_RENDERS = 1000; //Render at least 1 FPS
   UI_UPDATE_INTERVAL = 100;
+var
+  timeSinceTick, timeSinceUpdateUI, renderInterval, timeSinceRender: Cardinal;
 begin
   Done := False; //Repeats OnIdle asap without performing Form-specific idle code
 
@@ -591,7 +596,7 @@ begin
   Set8087CW($133F);
 
   //Priority 1. Do we need to tick?
-  var timeSinceTick := TimeSince(fTickSchedule);
+  timeSinceTick := TimeSince(fTickSchedule);
   if (timeSinceTick >= fGameTickInterval) and not ForcedRenderRequired then
   begin
     gGameApp.DoGameTick;
@@ -600,17 +605,17 @@ begin
   else
   begin
     //Priority 2. UI update and render
-    var timeSinceUpdateUI := TimeSince(fUpdateStateSchedule);
+    timeSinceUpdateUI := TimeSince(fUpdateStateSchedule);
     if timeSinceUpdateUI >= UI_UPDATE_INTERVAL then
     begin
       gGameApp.UpdateState;
       fUpdateStateSchedule := CalculateSchedule(fUpdateStateSchedule, timeSinceUpdateUI, UI_UPDATE_INTERVAL);
     end;
 
-    var renderInterval := GetRenderInterval;
+    renderInterval := GetRenderInterval;
     if renderInterval > 0 then
     begin
-      var timeSinceRender := TimeSince(fRenderSchedule);
+      timeSinceRender := TimeSince(fRenderSchedule);
       if timeSinceRender >= renderInterval then
       begin
         DoRender;
@@ -952,5 +957,7 @@ begin
   {$ENDIF}
 end;
 
+
+{$ENDIF}
 
 end.

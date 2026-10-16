@@ -321,7 +321,7 @@ var
 begin
   SaveStream.PlaceMarker('ScriptSoundsManager');
   SaveStream.Write(fLastScriptUID);
-  SaveStream.Write(fScriptSounds.Count);
+  SaveStream.Write(Integer(fScriptSounds.Count)); // FPC: generic Count is SizeInt (8 bytes), keep the 4-byte save format
 
   for I := 0 to fScriptSounds.Count - 1 do
   begin
@@ -338,7 +338,7 @@ begin
   end;
 
   SaveStream.PlaceMarker('ScriptSoundsRemoveRq');
-  SaveStream.Write(fSoundRemoveRequests.Count);
+  SaveStream.Write(Integer(fSoundRemoveRequests.Count)); // FPC: generic Count is SizeInt (8 bytes), keep the 4-byte save format
 
   keyArray := fSoundRemoveRequests.Keys.ToArray;
   {$IFNDEF FPC}

@@ -3,6 +3,7 @@ unit KM_NetClient;
 interface
 uses
   Classes, SysUtils, KM_NetTypes
+  {$IFDEF FPC} ,KM_CommonTypes {$ENDIF}
   {$IFDEF WDC} ,KM_NetClientOverbyte {$ENDIF}
   {$IFDEF FPC} ,KM_NetClientLNet {$ENDIF}
   {,KM_Log};

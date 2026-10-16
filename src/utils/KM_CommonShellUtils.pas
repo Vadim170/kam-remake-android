@@ -16,7 +16,7 @@ uses
   Forms
   {$IFDEF WDC}, ShellApi, PsAPI {$ENDIF}
   {$IFDEF Unix}
-  {$IFDEF FPC}, LCLIntF {$ENDIF}
+  {$IFDEF FPC}, LCLIntf {$ENDIF}
   {$ELSE}
   {$IFDEF FPC}, JwaPsApi {$ENDIF}
   {$ENDIF}

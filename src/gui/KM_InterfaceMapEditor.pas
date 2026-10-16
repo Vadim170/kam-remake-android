@@ -110,6 +110,15 @@ type
     procedure MapSaveEnded;
 
     procedure ManageExtrasKeys(Key: Word; Shift: TShiftState);
+    {$IFDEF ANDROID}
+  private
+    // Android: left toolbar column scrolls vertically when the screen is shorter than the editor needs
+    fSideScroll, fSideScrollMax: Integer;
+
+    fSideCtrls: array of TKMControl;
+    procedure SideUnscroll;
+    procedure SideSnapshotAndScroll;
+    {$ENDIF}
   protected
     MinimapView: TKMMinimapView;
     Label_Coordinates: TKMLabel;
@@ -142,6 +151,10 @@ type
   public
     constructor Create(aRender: TKMRender; var aMapSaveStarted, aMapSaveEnded: TKMEvent);
     destructor Destroy; override;
+    {$IFDEF ANDROID}
+    procedure ScrollSidebar(aDelta: Integer);
+    function IsOverScrollableSidebar(X, Y: Integer): Boolean;
+    {$ENDIF}
 
     procedure ShowMessage(const aText: string);
     procedure ExportPages(const aPath: string); override;
@@ -1439,16 +1452,21 @@ end;
 
 
 procedure TKMMapEdInterface.MoveObjectToCursorCell(aObjectToMove: TObject);
+var
+  H: TKMHouse;
+  houseOldPos, houseNewPos: TKMPoint;
+  G: TKMUnitGroup;
+  U: TKMUnit;
 begin
   if aObjectToMove = nil then Exit;
 
   // House
   if aObjectToMove is TKMHouse then
   begin
-    var H := TKMHouse(aObjectToMove);
+    H := TKMHouse(aObjectToMove);
 
-    var houseOldPos := H.Position;
-    var houseNewPos := KMPointAdd(gCursor.Cell, fDragHouseOffset);
+    houseOldPos := H.Position;
+    houseNewPos := KMPointAdd(gCursor.Cell, fDragHouseOffset);
 
     if not fDragingObject then
       SetHousePosition(H, houseNewPos) //handles Right click, when house is selected
@@ -1459,21 +1477,21 @@ begin
   // Group (as expected, right-clicking repositions the group)
   if aObjectToMove is TKMUnitGroup then
   begin
-    var G := TKMUnitGroup(aObjectToMove);
+    G := TKMUnitGroup(aObjectToMove);
     if G.SetGroupPosition(gCursor.Cell) then
       gGame.MapEditor.History.MakeCheckpoint(caUnits, Format(gResTexts[TX_MAPED_HISTORY_CHPOINT_MOVE_SMTH], [gRes.Units[G.UnitType].GUIName, G.Position.ToString]));
   end else
   // Warrior (a bit unexpectedly, dragging group leader around drags warriror)
   if aObjectToMove is TKMUnitWarrior then
   begin
-    var G := gHands.GetGroupByMember(TKMUnitWarrior(aObjectToMove));
+    G := gHands.GetGroupByMember(TKMUnitWarrior(aObjectToMove));
     if G.SetGroupPosition(gCursor.Cell) then
       gGame.MapEditor.History.MakeCheckpoint(caUnits, Format(gResTexts[TX_MAPED_HISTORY_CHPOINT_MOVE_SMTH], [gRes.Units[G.UnitType].GUIName, G.Position.ToString]));
   end else
   // Unit
   if aObjectToMove is TKMUnit then
   begin
-    var U := TKMUnit(aObjectToMove);
+    U := TKMUnit(aObjectToMove);
     if U.SetUnitPosition(gCursor.Cell) then
       gGame.MapEditor.History.MakeCheckpoint(caUnits, Format(gResTexts[TX_MAPED_HISTORY_CHPOINT_MOVE_SMTH], [gRes.Units[U.UnitType].GUIName, U.Position.ToString]));
   end;
@@ -1670,6 +1688,9 @@ end;
 
 procedure TKMMapEdInterface.Resize(X,Y: Word);
 begin
+  {$IFDEF ANDROID}
+  SideUnscroll;
+  {$ENDIF}
   inherited;
 
   fViewport.Resize(X, Y);
@@ -1678,7 +1699,80 @@ begin
 
   // Put Form_History back into window, if it goes out of it
   History_UpdatePos;
+  {$IFDEF ANDROID}
+  SideSnapshotAndScroll;
+  {$ENDIF}
 end;
+
+
+{$IFDEF ANDROID}
+const
+  MAPED_SIDEBAR_REQUIRED_HEIGHT = MENU_DESIGN_Y;
+
+
+// Move the left column back to its layout positions
+procedure TKMMapEdInterface.SideUnscroll;
+var
+  I: Integer;
+begin
+  if fSideScroll <> 0 then
+    for I := 0 to High(fSideCtrls) do
+      fSideCtrls[I].Top := fSideCtrls[I].Top + fSideScroll;
+end;
+
+
+// Collect controls of the left column (after layout) and apply the scroll offset
+procedure TKMMapEdInterface.SideSnapshotAndScroll;
+var
+  I, cnt: Integer;
+  C: TKMControl;
+begin
+  SetLength(fSideCtrls, Panel_Main.ChildCount);
+  cnt := 0;
+  for I := 0 to Panel_Main.ChildCount - 1 do
+  begin
+    C := Panel_Main.Childs[I];
+    if (C.Left >= 0) and (C.Left < MAPED_TOOLBAR_WIDTH - 4) and (C.Left + C.Width <= MAPED_TOOLBAR_WIDTH + 2) then
+    begin
+      fSideCtrls[cnt] := C;
+      Inc(cnt);
+    end;
+  end;
+  SetLength(fSideCtrls, cnt);
+
+  // Tab pages are anchored to the screen bottom; keep them as tall as the editor is designed for
+  if Panel_Common.Top + Panel_Common.Height < MAPED_SIDEBAR_REQUIRED_HEIGHT then
+    Panel_Common.Height := MAPED_SIDEBAR_REQUIRED_HEIGHT - Panel_Common.Top;
+
+  fSideScrollMax := Max(0, MAPED_SIDEBAR_REQUIRED_HEIGHT - Panel_Main.Height);
+
+  fSideScroll := EnsureRange(fSideScroll, 0, fSideScrollMax);
+  if fSideScroll <> 0 then
+    for I := 0 to High(fSideCtrls) do
+      fSideCtrls[I].Top := fSideCtrls[I].Top - fSideScroll;
+end;
+
+
+procedure TKMMapEdInterface.ScrollSidebar(aDelta: Integer);
+var
+  I, newScroll: Integer;
+begin
+  newScroll := EnsureRange(fSideScroll + aDelta, 0, fSideScrollMax);
+  if newScroll = fSideScroll then Exit;
+  for I := 0 to High(fSideCtrls) do
+    fSideCtrls[I].Top := fSideCtrls[I].Top + fSideScroll - newScroll;
+  fSideScroll := newScroll;
+end;
+
+
+function TKMMapEdInterface.IsOverScrollableSidebar(X, Y: Integer): Boolean;
+begin
+  Result := (fSideScrollMax > 0) and (X < MAPED_TOOLBAR_WIDTH)
+            and not ((X >= MinimapView.AbsLeft) and (X < MinimapView.AbsLeft + MinimapView.Width)
+                     and (Y >= MinimapView.AbsTop) and (Y < MinimapView.AbsTop + MinimapView.Height));
+end;
+{$ENDIF}
+
 
 
 procedure TKMMapEdInterface.SetLoadMode(aMultiplayer: Boolean);

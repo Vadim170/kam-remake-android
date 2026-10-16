@@ -453,9 +453,14 @@ interface
 {$ENDIF}
 
 // detecting Linux
+{$IFDEF ANDROID}        // Android: GL is provided by gl4es, no X11/GLX
+  {$DEFINE DGL_ANDROID}
+{$ELSE}
 {$IFDEF linux}          // Linux
   {$DEFINE DGL_LINUX}
 {$ENDIF}
+{$ENDIF}
+
 
 // detecting 64 Bit CPU
 {$IFDEF CPU64}          // fpc on 64 bit cpus
@@ -468,6 +473,8 @@ uses
   SysUtils
   {$IFDEF DGL_WIN}, Windows{$ENDIF}
   {$IFDEF DGL_LINUX}, X, XLib, XUtil, types {$ENDIF}
+  {$IFDEF DGL_ANDROID}, types {$ENDIF}
+
   ;
 
 type
@@ -12898,8 +12905,8 @@ const
     OPENGL_LIBNAME = 'libGL.dylib';
     GLU_LIBNAME = 'libGLU.dylib';
   {$ELSE}
-    OPENGL_LIBNAME = 'libGL.so.1';
-    GLU_LIBNAME = 'libGLU.so.1';
+    OPENGL_LIBNAME = {$IFDEF ANDROID}'libGL.so'{$ELSE}'libGL.so.1'{$ENDIF};
+    GLU_LIBNAME = {$IFDEF ANDROID}'libGLU.so'{$ELSE}'libGLU.so.1'{$ENDIF};
   {$ENDIF}
 {$ENDIF}
 
@@ -13150,14 +13157,14 @@ procedure Read_WIN_swap_hint;
 implementation
 
 
-{$IFDEF DGL_LINUX}
+{$IF DEFINED(DGL_LINUX) or DEFINED(DGL_ANDROID)}
 const
   RTLD_LAZY = $001;
   RTLD_NOW = $002;
   RTLD_BINDING_MASK = $003;
 
   // Seems to work on Debian / Fedora
-  LibraryLib = {$IFDEF Linux} 'libdl.so.2'{$ELSE} 'c'{$ENDIF};
+  LibraryLib = {$IFDEF DGL_ANDROID} 'libdl.so'{$ELSE}{$IFDEF Linux} 'libdl.so.2'{$ELSE} 'c'{$ENDIF}{$ENDIF};
 
 function dlopen(Name: PAnsiChar; Flags: LongInt): Pointer; cdecl; external LibraryLib name 'dlopen';
 function dlclose(Lib: Pointer): LongInt; cdecl; external LibraryLib name 'dlclose';
@@ -13172,7 +13179,7 @@ begin
   Result := Pointer(LoadLibrary(Name));
   {$ENDIF}
 
-  {$IFDEF DGL_LINUX}
+  {$IF DEFINED(DGL_LINUX) or DEFINED(DGL_ANDROID)}
   Result := dlopen(Name, RTLD_LAZY);
   {$ENDIF}
 end;
@@ -13187,7 +13194,7 @@ begin
     Result := FreeLibrary(HMODULE(LibHandle));
     {$ENDIF}
 
-    {$IFDEF DGL_LINUX}
+    {$IF DEFINED(DGL_LINUX) or DEFINED(DGL_ANDROID)}
     Result := dlclose(LibHandle) = 0;
     {$ENDIF}
 end;
@@ -13202,6 +13209,11 @@ begin
   {$IFNDEF DGL_LINUX}
   Result :=  nil;
   {$ENDIF}
+  {$ENDIF}
+
+  {$IFDEF DGL_ANDROID}
+    if LibHandle <> nil then
+      Result := dlsym(LibHandle, ProcName);
   {$ENDIF}
 
   {$IFDEF DGL_WIN}

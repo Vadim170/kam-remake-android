@@ -4,7 +4,7 @@ interface
 uses
   KM_CommonTypes,
   {$IFDEF WDC} PNGImage; {$ENDIF}
-  {$IFDEF FPC} BGRABitmap, BGRABitmapTypes; {$ENDIF}
+  {$IFDEF FPC} FPImage, FPReadPNG, FPWritePNG; {$ENDIF}
 
 
   procedure SaveToPng(aWidth, aHeight: Word; const aPixelData: TKMCardinalArray; const aFilename: UnicodeString);
@@ -19,7 +19,7 @@ uses
 procedure SaveToPng(aWidth, aHeight: Word; const aPixelData: TKMCardinalArray; const aFilename: UnicodeString);
 var
   {$IFDEF WDC} Png: PNGImage.TPngImage; {$ENDIF}
-  {$IFDEF FPC} Png: TBGRABitmap; {$ENDIF}
+  {$IFDEF FPC} Png: TFPMemoryImage; Writer: TFPWriterPNG; {$ENDIF}
   I, K: Integer;
   T: Cardinal;
 begin
@@ -42,19 +42,20 @@ begin
     end;
   {$ENDIF}
   {$IFDEF FPC}
-    Png := TBGRABitmap.Create(aWidth, aHeight, BGRABlack);
+    Png := TFPMemoryImage.Create(aWidth, aHeight);
+    Writer := TFPWriterPNG.Create;
     try
+      Writer.UseAlpha := True;
       for I := 0 to aHeight - 1 do
       for K := 0 to aWidth - 1 do
       begin
         T := aPixelData[I * aWidth + K];
-        //I can't figure out how to get transparency to save in PNGs, so for now everything is opaque
-        Png.CanvasBGRA.Pixels[K,I] := T and $FFFFFF;
-        Png.AlphaPixel(K, I, 255);
+        Png.Colors[K, I] := FPColor((T and $FF) * $101, ((T shr 8) and $FF) * $101, ((T shr 16) and $FF) * $101, (T shr 24) * $101);
       end;
 
-      Png.SaveToFile(aFilename);
+      Png.SaveToFile(String(aFilename), Writer);
     finally
+      Writer.Free;
       Png.Free;
     end;
   {$ENDIF}
@@ -68,7 +69,8 @@ var
   T: Byte;
   {$ENDIF}
   {$IFDEF FPC}
-  Png: TBGRABitmap;
+  Png: TFPMemoryImage;
+  C: TFPColor;
   {$ENDIF}
   I, K: Integer;
 begin
@@ -109,17 +111,24 @@ begin
     Png.Free;
   {$ENDIF}
   {$IFDEF FPC}
-    Png := TBGRABitmap.Create(aFile);
+    Png := TFPMemoryImage.Create(0, 0);
+    try
+      Png.LoadFromFile(String(aFile));
 
-    aWidth := Png.Width;
-    aHeight := Png.Height;
-    SetLength(aPixelData, Png.Width * Png.Height);
+      aWidth := Png.Width;
+      aHeight := Png.Height;
+      SetLength(aPixelData, Png.Width * Png.Height);
 
-    for K:=0 to Png.Height-1 do for I:=0 to Png.Width-1 do
-      aPixelData[K * Png.Width + I] := cardinal(Png.GetPixel(I,K).red) or (cardinal(Png.GetPixel(I,K).green) shl 8) or
-                                      (cardinal(Png.GetPixel(I,K).blue) shl 16) or (cardinal(Png.GetPixel(I,K).alpha) shl 24);
-
-    Png.Free;
+      for K := 0 to Png.Height - 1 do
+      for I := 0 to Png.Width - 1 do
+      begin
+        C := Png.Colors[I, K];
+        aPixelData[K * Png.Width + I] := Cardinal(C.red shr 8) or (Cardinal(C.green shr 8) shl 8) or
+                                         (Cardinal(C.blue shr 8) shl 16) or (Cardinal(C.alpha shr 8) shl 24);
+      end;
+    finally
+      Png.Free;
+    end;
   {$ENDIF}
 end;
 

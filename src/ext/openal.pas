@@ -62,12 +62,16 @@ uses
 
 { $ DEFINE ALUT} //define ALUT to use alut.dll
 
+type
+  // dlopen handles are pointers, THandle is only 32 bit in FPC on Unix
+  TALLibHandle = {$IF DEFINED(FPC) AND NOT DEFINED(MSWindows)}PtrUInt{$ELSE}THandle{$IFEND};
+
 const
 {$IFDEF MSWindows}
   callibname='OpenAL32.dll';
   calutlibname='Alut.dll';
 {$ENDIF}
-{$IFDEF Linux}
+{$IF DEFINED(Linux) OR DEFINED(ANDROID)}
   callibname='libopenal.so';
   calutlibname='libalut.so';
 {$ENDIF}
@@ -1893,11 +1897,11 @@ var
 {$ENDIF}
 
 var
-  LibHandle          : THandle = 0;
+  LibHandle          : TALLibHandle = 0;
 {$IFDEF ALUT}
-  AlutLibHandle      : THandle = 0;
+  AlutLibHandle      : TALLibHandle = 0;
 {$ENDIF}
-  EFXUtilLibHandle       : THandle = 0;
+  EFXUtilLibHandle       : TALLibHandle = 0;
 
 {$IFDEF ALUT}
 function InitOpenAL(LibName: String = callibname;AlutLibName: String = calutlibname): Boolean;
@@ -1939,23 +1943,23 @@ const
   RTLD_LAZY         = $001;
   RTLD_NOW          = $002;
   RTLD_BINDING_MASK = $003;
-  LibraryLib        = {$IFDEF Linux}'dl'{$ELSE}'c'{$ENDIF};
+  LibraryLib        = {$IF DEFINED(Linux) OR DEFINED(ANDROID)}'dl'{$ELSE}'c'{$IFEND};
 
 function LoadLibraryEx(Name : PChar; Flags : LongInt) : Pointer; cdecl; external LibraryLib name 'dlopen';
 function GetProcAddressEx(Lib : Pointer; Name : PChar) : Pointer; cdecl; external LibraryLib name 'dlsym';
 function FreeLibraryEx(Lib : Pointer) : LongInt; cdecl; external LibraryLib name 'dlclose';
 
-function LoadLibrary(Name : PChar) : THandle;
+function LoadLibrary(Name : PChar) : TALLibHandle;
 begin
- Result := THandle(LoadLibraryEx(Name, RTLD_LAZY));
+ Result := TALLibHandle(LoadLibraryEx(Name, RTLD_LAZY));
 end;
 
-function GetProcAddress(LibHandle : THandle; ProcName : PChar) : Pointer;
+function GetProcAddress(LibHandle : TALLibHandle; ProcName : PChar) : Pointer;
 begin
  Result := GetProcAddressEx(Pointer(LibHandle), ProcName);
 end;
 
-function FreeLibrary(LibHandle : THandle) : Boolean;
+function FreeLibrary(LibHandle : TALLibHandle) : Boolean;
 begin
  if LibHandle = 0 then
    Result := False

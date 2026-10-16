@@ -3,7 +3,7 @@ unit KM_AIMayor;
 interface
 uses
   KM_AIMayorBalance, KM_AICityPlanner, KM_AISetup,
-  KM_PathfindingRoad,
+  KM_PathFindingRoad,
   KM_ResHouses, KM_HouseCollection,
   KM_CommonClasses, KM_Defaults, KM_Points,
   KM_NavMeshDefences,

@@ -2223,8 +2223,10 @@ begin
   if (aPathName <> '') then
   begin
     // We can make directories in async too, since all save parts are made in async now
+    {$IFDEF WDC}
     aSaveWorkerThread.QueueWork(procedure
     begin
+    {$ENDIF}
       path := ExtractFilePath(path);
       if DirectoryExists(path) then
       begin
@@ -2242,7 +2244,9 @@ begin
       end
       else
         ForceDirectories(path);
+    {$IFDEF WDC}
     end, 'Prepare save dir');
+    {$ENDIF}
   end;
 end;
 
@@ -2371,12 +2375,16 @@ begin
   try
     // Emulate slow save in the async save thread
     if DBG_SLOW_GAME_SAVE_ASYNC then
+      {$IFDEF WDC}
       aSaveWorkerThread.QueueWork(procedure
         begin
           Sleep(10000);
         end,
         'Slow Game Save'
       );
+      {$ELSE}
+      Sleep(10000);
+      {$ENDIF}
 
     // Convert name to full path+name
     fullPath := SaveName(aSaveName, EXT_SAVE_MAIN, fParams.IsMultiplayer);
@@ -2453,7 +2461,11 @@ begin
       // Increase numbers for autosave names in the list
       for I := fAutosavesCnt - 1 downto 1 do
       begin
+        {$IFDEF FPC}
+        index := fLastSaves.LastIndexOf(AUTOSAVE_SAVE_NAME + Int2Fix(I, 2));
+        {$ELSE}
         index := fLastSaves.IndexOfItem(AUTOSAVE_SAVE_NAME + Int2Fix(I, 2), TDirection.FromEnd);
+        {$ENDIF}
         // we use limited list, so some autosave names will be deleted if other save names were added earlier
         if index <> -1 then
           fLastSaves[index] := AUTOSAVE_SAVE_NAME + Int2Fix(I + 1, 2);

@@ -212,6 +212,16 @@ type
     Label_TeamName: TKMLabel;
 
     Panel_Controls: TKMPanel;
+    {$IFDEF ANDROID}
+    // Android: sidebar can be scrolled vertically when the screen is shorter than the sidebar needs
+    fSidebarScroll: Integer;
+    fSidebarScrollMax: Integer;
+    fControlsBaseTop: Integer;
+  private
+    procedure ApplySidebarScroll;
+  protected
+    {$ENDIF}
+
       Button_Main: array [tbBuild..tbMenu] of TKMButton; // 4 common buttons + Return
       Button_Back: TKMButton;
 
@@ -371,6 +381,11 @@ type
     procedure MouseMove(Shift: TShiftState; X,Y: Integer; var aHandled: Boolean); override;
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer); override;
     procedure Resize(X,Y: Word); override;
+    {$IFDEF ANDROID}
+    procedure ScrollSidebar(aDelta: Integer);
+    function IsOverScrollableSidebar(X, Y: Integer): Boolean;
+    property SidebarScrollMax: Integer read fSidebarScrollMax;
+    {$ENDIF}
     procedure SyncUI(aMoveViewport: Boolean = True); override;
     procedure UpdateHotkeys; override;
     procedure UpdateState(aGlobalTickCount: Cardinal); override;
@@ -994,6 +1009,10 @@ begin
   // Needs to be -10 when the swords are hidden so it fits 1024x576
   Panel_Controls.Top := Sidebar_Top.Height - 10 + (10+Sidebar_Middle.Height) * Byte(showSwords);
   Panel_Controls.Height := Panel_Main.Height - Panel_Controls.Top;
+  {$IFDEF ANDROID}
+  fControlsBaseTop := Panel_Controls.Top;
+  ApplySidebarScroll;
+  {$ENDIF}
 
   if fGuiGameStats.Visible then
     fGuiGameStats.Resize;
@@ -1007,7 +1026,45 @@ begin
 end;
 
 
+{$IFDEF ANDROID}
+const
+  // Gameplay sidebar is designed to fit 576px height (swords filler hidden)
+  SIDEBAR_REQUIRED_HEIGHT = 576;
+
+
+procedure TKMGamePlayInterface.ApplySidebarScroll;
+begin
+  fSidebarScrollMax := Max(0, SIDEBAR_REQUIRED_HEIGHT - Panel_Main.Height);
+  fSidebarScroll := EnsureRange(fSidebarScroll, 0, fSidebarScrollMax);
+
+  Sidebar_Top.Top := -fSidebarScroll;
+  Sidebar_Middle.Top := Sidebar_Top.Height - fSidebarScroll;
+  MinimapView.Top := 10 - fSidebarScroll;
+  Panel_Controls.Top := fControlsBaseTop - fSidebarScroll;
+  // Keep full sidebar height, the part below the screen is reached by scrolling
+  Panel_Controls.Height := Max(Panel_Main.Height, SIDEBAR_REQUIRED_HEIGHT) - fControlsBaseTop;
+end;
+
+
+procedure TKMGamePlayInterface.ScrollSidebar(aDelta: Integer);
+begin
+  if fSidebarScrollMax = 0 then Exit;
+  fSidebarScroll := EnsureRange(fSidebarScroll + aDelta, 0, fSidebarScrollMax);
+  ApplySidebarScroll;
+end;
+
+
+function TKMGamePlayInterface.IsOverScrollableSidebar(X, Y: Integer): Boolean;
+begin
+  Result := (fSidebarScrollMax > 0) and (X < TOOLBAR_WIDTH)
+            and not ((X >= MinimapView.AbsLeft) and (X < MinimapView.AbsLeft + MinimapView.Width)
+                     and (Y >= MinimapView.AbsTop) and (Y < MinimapView.AbsTop + MinimapView.Height));
+end;
+{$ENDIF}
+
+
 { Pause overlay page }
+
 procedure TKMGamePlayInterface.Create_Pause;
 const
   PAN_DEBUG_W = 70;
@@ -1826,13 +1883,16 @@ end;
 
 // Update replay marks according to Game SavedReplays (checkpoints)
 procedure TKMGamePlayInterface.UpdateReplayMarks;
+var
+  I: Integer;
+  ticksList: TArray<Cardinal>;
 begin
   if (Self = nil) or (gGame.SavePoints = nil) then Exit;
 
   ReplayBar_Replay.Clear; // Clear marks, we are going to refill them all
   
-  var ticksList := gGame.SavePoints.GetAvailableTicks;
-  for var I := 0 to High(ticksList) do
+  ticksList := gGame.SavePoints.GetAvailableTicks;
+  for I := 0 to High(ticksList) do
     AddReplayMark(ticksList[I]);
 end;
 
@@ -2158,6 +2218,7 @@ end;
 procedure TKMGamePlayInterface.MessageLog_Update(aFullRefresh: Boolean);
 var
   I, K: Integer;
+  newRow: TKMListRow;
 begin
   // Exit if synced already
   if not aFullRefresh and not gMySpectator.Hand.MessageLog.HasNewMessages then Exit;
@@ -2173,7 +2234,7 @@ begin
   K := 0;
   for I := Max(gMySpectator.Hand.MessageLog.CountLog - MAX_LOG_MSGS, 0) to gMySpectator.Hand.MessageLog.CountLog - 1 do
   begin
-    var newRow := MakeListRow(['', gMySpectator.Hand.MessageLog[I].Text], I);
+    newRow := MakeListRow(['', gMySpectator.Hand.MessageLog[I].Text], I);
 
     if gMySpectator.Hand.MessageLog[I].Kind = mkGroup then
     begin

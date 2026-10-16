@@ -268,7 +268,7 @@ type
   //TXStringList using integer values, instead of its String represantation, when sorted
   TXStringList = class(TStringList)
   protected
-    function CompareStrings(const S1, S2: string): Integer; override;
+    function CompareStrings(const S1, S2: {$IFDEF FPC}AnsiString{$ELSE}string{$ENDIF}): Integer; override;
   end;
 
 
@@ -402,8 +402,8 @@ type
 implementation
 uses
   Math,
-  System.NetEncoding,
-  {$IFDEF FPC} zstream, {$ENDIF}
+  {$IFDEF WDC} System.NetEncoding, {$ENDIF}
+  {$IFDEF FPC} zstream, base64, {$ENDIF}
   {$IFDEF WDC} ZLib, {$ENDIF}
   KM_CommonUtils, KM_Defaults;
 
@@ -432,7 +432,7 @@ end;
 
 {TXStringList}
 //List custom comparation, using Integer value, instead of its String represantation
-function TXStringList.CompareStrings(const S1, S2: string): Integer;
+function TXStringList.CompareStrings(const S1, S2: {$IFDEF FPC}AnsiString{$ELSE}string{$ENDIF}): Integer;
 var
   i1, i2, e1, e2: Integer;
 begin
@@ -582,8 +582,14 @@ end;
 
 
 function TKMemoryStream.ToBase64: String;
+{$IFDEF WDC}
 var
   Encoding: TBase64Encoding;
+{$ENDIF}
+{$IFDEF FPC}
+var
+  raw: RawByteString;
+{$ENDIF}
 begin
   Result := '';
   {$IFDEF WDC}
@@ -595,7 +601,10 @@ begin
   end;
   {$ENDIF}
   {$IFDEF FPC}
-  // Not supported yet (no support was needed yet)
+  SetLength(raw, Size);
+  if Size > 0 then
+    Move(Memory^, raw[1], Size);
+  Result := String(EncodeStringBase64(raw));
   {$ENDIF}
 end;
 
@@ -621,6 +630,10 @@ var
   Bytes: TBytes;
   Encoding: TBase64Encoding;
 {$ENDIF}
+{$IFDEF FPC}
+var
+  raw: RawByteString;
+{$ENDIF}
 begin
   {$IFDEF WDC}
   Encoding := TBase64Encoding.Create(0);
@@ -633,9 +646,13 @@ begin
   end;
   {$ENDIF}
   {$IFDEF FPC}
-  // Not supported yet (no support was needed yet)
+  raw := DecodeStringBase64(AnsiString(aBase64));
+  if Length(raw) > 0 then
+    WriteBuffer(raw[1], Length(raw));
+  Position := 0;
   {$ENDIF}
 end;
+
 
 
 procedure TKMemoryStream.LoadFromBase64Compressed(aBase64: string);
@@ -1479,7 +1496,7 @@ begin
   // We use only Latin for Markers, hence ANSI is fine
   // But since Android does not support "AnsiString" we take "string" as input
   ReadANSI(s);
-  Assert(s = aTitle);
+  Assert(s = aTitle, 'Stream marker mismatch: expected "' + aTitle + '", got "' + Copy(s, 1, 40) + '"');
 end;
 
 
@@ -1769,7 +1786,7 @@ procedure TKMemoryStreamText.Write(const Value: TDateTime);
 var
   str: String;
 begin
-  DateTimeToString(str, 'dd.mm.yyyy hh:nn:ss.zzz', Value);
+  str := FormatDateTime('dd.mm.yyyy hh:nn:ss.zzz', Value);
   WriteText(str);
 end;
 

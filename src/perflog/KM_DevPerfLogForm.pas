@@ -42,7 +42,7 @@ type
 
 implementation
 uses
-  System.SysUtils, System.TypInfo, System.Math,
+  SysUtils, TypInfo, Math,
   {$IFDEF MSWindows} Windows, {$ENDIF}
   {$IFDEF Unix} LCLIntf, LCLType, {$ENDIF}
   KM_Defaults, KM_CommonUtils;

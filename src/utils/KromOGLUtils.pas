@@ -3,9 +3,13 @@ unit KromOGLUtils;
 interface
 uses
   dglOpenGL,
+  {$IFDEF ANDROID}
+  LCLType
+  {$ELSE}
   {$IFDEF FPC} GL, LCLIntf, {$ENDIF}
   {$IFDEF MSWindows} Windows {$ENDIF}
   {$IFDEF Unix} LCLType, glx, x, xlib, xutil {$ENDIF}
+  {$ENDIF}
   ;
 
 {$IFDEF Unix}
@@ -220,6 +224,11 @@ end;
 
 
 procedure BuildFont(h_DC: HDC; FontSize: Integer; FontWeight: Word = FW_NORMAL);
+{$IFDEF ANDROID}
+begin
+  //No system fonts for GL display lists on Android
+end;
+{$ELSE}
 var
   Font: HFONT;
 begin
@@ -236,6 +245,8 @@ begin
   // Emulate these functions (with freetype we should be able to code a multi platform solution)
   {$ENDIF}
 end;
+{$ENDIF}
+
 
 
 procedure glPrint(const text: AnsiString);

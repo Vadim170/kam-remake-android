@@ -67,7 +67,7 @@ var
 
 implementation
 uses
-  KM_DevPerfLogForm,
+  {$IFNDEF ANDROID} KM_DevPerfLogForm, {$ENDIF}
   TypInfo, KM_Defaults, KM_RenderUI, KM_RenderAux, KM_ResFonts;
 
 
@@ -114,7 +114,7 @@ begin
   {$IFDEF DBG_PERFLOG}
   if SaveOnExit then
   begin
-    DateTimeToString(s, 'yyyy-mm-dd_hh-nn-ss', Now); //2007-12-23 15-24-33
+    s := FormatDateTime('yyyy-mm-dd_hh-nn-ss', Now); //2007-12-23 15-24-33
     gPerfLogs.SaveToFile(ExeDir + 'logs' + PathDelim + 'performance_log_' + s + '.log');
   end;
 
@@ -202,7 +202,9 @@ end;
 
 procedure TKMPerfLogs.SetOnFormChanged(const aValue: TKMEvent);
 begin
+  {$IFNDEF ANDROID}
   TFormPerfLogs(fPerfLogForm).OnFormChanged := aValue;
+  {$ENDIF}
 end;
 
 
@@ -348,7 +350,11 @@ end;
 
 function TKMPerfLogs.FormHeight: Integer;
 begin
+  {$IFNDEF ANDROID}
   Result := TFormPerfLogs(fPerfLogForm).FormHeight;
+  {$ELSE}
+  Result := 0;
+  {$ENDIF}
 end;
 
 
@@ -356,6 +362,7 @@ procedure TKMPerfLogs.ShowForm(aContainer: TWinControl);
 begin
   if Self = nil then Exit;
 
+  {$IFNDEF ANDROID}
   fPerfLogForm := TFormPerfLogs.Create(aContainer);
 
   fPerfLogForm.Parent := aContainer;
@@ -367,6 +374,7 @@ begin
   end;
 
   TFormPerfLogs(fPerfLogForm).Show(Self);
+  {$ENDIF}
 end;
 
 

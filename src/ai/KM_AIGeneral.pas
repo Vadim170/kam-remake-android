@@ -146,7 +146,7 @@ begin
   fDefencePositions.Save(SaveStream);
 
   SaveStream.PlaceMarker('AIGeneral_unitsEquipOrdered');
-  SaveStream.Write(fUnitsEquipOrdered.Count);
+  SaveStream.Write(Integer(fUnitsEquipOrdered.Count)); // FPC: generic Count is SizeInt (8 bytes), keep the 4-byte save format
   keyArray := fUnitsEquipOrdered.Keys.ToArray;
   {$IFNDEF FPC}
   TArray.Sort<Integer>(keyArray);

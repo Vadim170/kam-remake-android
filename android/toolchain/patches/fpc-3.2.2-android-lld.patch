@@ -1,0 +1,18 @@
+--- a/compiler/systems/t_android.pas	2026-10-17 02:24:45
++++ b/compiler/systems/t_android.pas	2026-10-17 02:24:45
+@@ -348,13 +348,13 @@
+ 
+       add('SECTIONS');
+       add('{');
+-      add('  .data           :');
++      add('  .fpc_metadata   :');
+       add('  {');
+       { extra by FPC }
+       add('    KEEP (*(.fpc .fpc.n_version .fpc.n_links))');
+       add('  }');
+       add('}');
+-      add('INSERT AFTER .data1');
++      add('INSERT AFTER .data;');
+ 
+       // Define different aliases for normal and JNI libraries
+       if FJNIOnLoadName <> '' then

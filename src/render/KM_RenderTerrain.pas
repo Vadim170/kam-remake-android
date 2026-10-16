@@ -213,6 +213,10 @@ end;
 
 function TKMRenderTerrain.VBOSupported: Boolean;
 begin
+  {$IFDEF ANDROID_NOVBO}
+  Exit(False);
+  {$ENDIF}
+
   //Some GPUs don't comply with OpenGL 1.5 spec on VBOs, so check Assigned instead of GL_VERSION_1_5
   Result := Assigned(glGenBuffers)        and Assigned(glBindBuffer)    and Assigned(glBufferData) and
             Assigned(glEnableClientState) and Assigned(glVertexPointer) and Assigned(glClientActiveTexture) and
@@ -614,6 +618,12 @@ begin
 
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    {$IFDEF ANDROID}
+    // gl4es: don't leave VBOs bound for the following immediate mode (glBegin/glEnd) rendering
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    fLastBindVBOArrayType := vatNone;
+    {$ENDIF}
   end
   else
   begin
@@ -686,6 +696,12 @@ begin
 
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    {$IFDEF ANDROID}
+    // gl4es: don't leave VBOs bound for the following immediate mode (glBegin/glEnd) rendering
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    fLastBindVBOArrayType := vatNone;
+    {$ENDIF}
   end
   else
   begin
@@ -766,6 +782,12 @@ begin
 
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    {$IFDEF ANDROID}
+    // gl4es: don't leave VBOs bound for the following immediate mode (glBegin/glEnd) rendering
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    fLastBindVBOArrayType := vatNone;
+    {$ENDIF}
   end
   else
   begin
@@ -935,6 +957,12 @@ begin
 
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    {$IFDEF ANDROID}
+    // gl4es: don't leave VBOs bound for the following immediate mode (glBegin/glEnd) rendering
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    fLastBindVBOArrayType := vatNone;
+    {$ENDIF}
   end
   else
   begin
@@ -1006,6 +1034,12 @@ begin
 
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    {$IFDEF ANDROID}
+    // gl4es: don't leave VBOs bound for the following immediate mode (glBegin/glEnd) rendering
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    fLastBindVBOArrayType := vatNone;
+    {$ENDIF}
   end
   else
   begin
@@ -1091,6 +1125,12 @@ begin
 
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    {$IFDEF ANDROID}
+    // gl4es: don't leave VBOs bound for the following immediate mode (glBegin/glEnd) rendering
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    fLastBindVBOArrayType := vatNone;
+    {$ENDIF}
   end
   else
   begin

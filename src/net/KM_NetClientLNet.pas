@@ -2,7 +2,7 @@ unit KM_NetClientLNet;
 {$I KaM_Remake.inc}
 interface
 uses
-  Classes, Math, SysUtils, LNet, dialogs;
+  Classes, Math, SysUtils, LNet, Dialogs, KM_CommonTypes;
 
 
 { This unit knows nothing about KaM, it's just a puppet in hands of KM_ClientControl,
@@ -28,7 +28,7 @@ type
     procedure Connected(aSocket: TLSocket);
     procedure Disconnected(aSocket: TLSocket);
     procedure Receive(aSocket: TLSocket);
-    procedure Error(const aMsg: string; aSocket: TLSocket);
+    procedure Error(const aMsg: AnsiString; aSocket: TLSocket);
     procedure CanSend(aSocket: TLSocket);
 
     procedure PutInBuffer(aData: Pointer; aLength: Cardinal);
@@ -189,7 +189,7 @@ begin
 end;
 
 
-procedure TKMNetClientLNet.Error(const aMsg: string; aSocket: TLSocket);
+procedure TKMNetClientLNet.Error(const aMsg: AnsiString; aSocket: TLSocket);
 begin
   fOnError('LNet Client Error: ' + aMsg);
 end;

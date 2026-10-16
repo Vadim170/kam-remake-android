@@ -1,0 +1,1059 @@
+diff --git a/Source/PascalScript.inc b/Source/PascalScript.inc
+index 53ec0f0..920012d 100644
+--- a/Source/PascalScript.inc
++++ b/Source/PascalScript.inc
+@@ -13,6 +13,8 @@
+ {$INCLUDE eDefines.inc}
+ 
+ {$IFDEF FPC}{$MODE DELPHI}{$H+}{$ENDIF}
++// KaM: FPC 3.2.2 aarch64 node CSE (enabled by -O2) generates invalid code
++{$IFDEF FPC}{$IFDEF CPUAARCH64}{$OPTIMIZATION NOCSE}{$ENDIF}{$ENDIF}
+ 
+ {$IFDEF VER125}{C4}{$B-}{$X+}{$T-}{$H+}{$ENDIF}
+ {$IFDEF VER110}{C3}{$B-}{$X+}{$T-}{$H+}{$ENDIF}
+diff --git a/Source/PascalScriptFPC.inc b/Source/PascalScriptFPC.inc
+index a6d1997..ea60b99 100644
+--- a/Source/PascalScriptFPC.inc
++++ b/Source/PascalScriptFPC.inc
+@@ -1,7 +1,16 @@
+-  {$IF (defined(cpuaarch64) or defined(cpuarm))}
++  // KaM: aarch64 uses native aarch64.inc caller, since FPC 3.2.2 has no Rtti.Invoke manager for aarch64
++  {$IF defined(cpuarm)}
+     {$DEFINE USEINVOKECALL}
+   {$IFEND}
+ 
++  // KaM Android port compiles the engine with string = UnicodeString (DelphiUnicode mode), same as Delphi,
++  // so script 'string' must map to UnicodeString too (as it does in Delphi 2009+)
++  {$IFDEF ANDROID}
++    {$DEFINE PS_KMR_UNICODE_STRING}
++  {$ENDIF}
++
++
++
+ 
+ 
+   {$DEFINE PS_HAVEVARIANT}
+diff --git a/Source/aarch64.inc b/Source/aarch64.inc
+new file mode 100644
+index 0000000..d585c77
+--- /dev/null
++++ b/Source/aarch64.inc
+@@ -0,0 +1,514 @@
++{ Implementation of native calls for the AArch64 (ARM64) procedure call standard
++  as used by FPC on Linux/Android (non-Darwin).
++
++  FPC specifics (see compiler/aarch64/cpupara.pas):
++  - integer/pointer args in X0..X7, float args (and HFA members) in V0..V7, the rest on the stack in 8-byte slots
++  - a composite that doesn't fit into the remaining registers goes to the stack entirely (and no further
++    registers of that class are used)
++  - records/arrays > 16 bytes (non-HFA) are passed by reference; const static arrays are passed by reference
++  - managed results (strings, interfaces, dynamic arrays, variants, records with managed fields) are returned via
++    a hidden pointer parameter which goes right after Self and before the normal parameters
++  - other results that don't fit into X0/X1 (or V0..V3 for HFA) are returned via a pointer in X8 }
++
++const
++  EmptyPchar: array[0..0] of char = #0;
++
++type
++  TPSA64Registers = packed record
++    X: array [0..7] of UInt64;     //   0
++    X8: UInt64;                    //  64
++    D: array [0..7] of UInt64;     //  72
++    ResX: array [0..1] of UInt64;  // 136
++    ResD: array [0..3] of UInt64;  // 152
++  end;
++
++
++procedure aarch64call(aAddress: Pointer; var aRegs: TPSA64Registers; aStack: Pointer; aStackSize: PtrUInt); assembler; nostackframe;
++asm
++  stp   x29, x30, [sp, #-32]!
++  mov   x29, sp
++  stp   x19, x20, [sp, #16]
++  mov   x19, x1
++  mov   x20, x0
++
++  // Reserve outgoing stack area (aStackSize is a multiple of 16) and copy stack params
++  sub   sp, sp, x3
++  mov   x9, sp
++  cbz   x3, .Lpsa64_nostack
++.Lpsa64_copy:
++  ldr   x10, [x2]
++  str   x10, [x9]
++  add   x2, x2, #8
++  add   x9, x9, #8
++  subs  x3, x3, #8
++  b.ne  .Lpsa64_copy
++.Lpsa64_nostack:
++
++  // Load argument registers
++  ldp   d0, d1, [x19, #72]
++  ldp   d2, d3, [x19, #88]
++  ldp   d4, d5, [x19, #104]
++  ldp   d6, d7, [x19, #120]
++  ldr   x8, [x19, #64]
++  ldp   x0, x1, [x19]
++  ldp   x2, x3, [x19, #16]
++  ldp   x4, x5, [x19, #32]
++  ldp   x6, x7, [x19, #48]
++
++  blr   x20
++
++  // Store results
++  stp   x0, x1, [x19, #136]
++  stp   d0, d1, [x19, #152]
++  stp   d2, d3, [x19, #168]
++
++  mov   sp, x29
++  ldp   x19, x20, [sp, #16]
++  ldp   x29, x30, [sp], #32
++end;
++
++
++function TPSExec.InnerfuseCall(_Self, Address: Pointer; CallingConv: TPSCallingConvention; Params: TPSList; res: PPSVariantIFC): Boolean;
++var
++  Regs: TPSA64Registers;
++  Stack: array of Byte;
++  StackLen: Integer;
++  NGRN, NSRN: Integer;
++  IsConstructor, IsVirtualCons: Boolean;
++  CallData: TPSList;
++  I: Integer;
++  pp: ^Byte;
++  resBase: TPSBaseType;
++  resHFABase: TPSBaseType;
++  resHFACount: Integer;
++  resKind: (rkNone, rkInt, rkFloat, rkHFA, rkIndirectX8, rkHidden);
++  tmpS: Single;
++  tmpD: Double;
++  tmpQ: UInt64;
++
++  function rp(p: PPSVariantIFC): PPSVariantIFC;
++  begin
++    if p = nil then
++    begin
++      Result := nil;
++      Exit;
++    end;
++    if p.aType.BaseType = btPointer then
++    begin
++      p^.aType := Pointer(Pointer(IPointer(p^.dta) + PointerSize)^);
++      p^.Dta := Pointer(p^.dta^);
++    end;
++    Result := p;
++  end;
++
++  // Does the type need finalization (hence is "managed" for FPC)
++  function IsManaged(aType: TPSTypeRec): Boolean;
++  var
++    K: Integer;
++  begin
++    Result := False;
++    case aType.BaseType of
++      btString, {$IFNDEF PS_NOWIDESTRING}btUnicodeString, btWideString,{$ENDIF}
++      {$IFNDEF PS_NOINTERFACES}btInterface,{$ENDIF}
++      btArray, btVariant:
++        Result := True;
++      btRecord:
++        for K := 0 to TPSTypeRec_Record(aType).FieldTypes.Count - 1 do
++          if IsManaged(TPSTypeRec(TPSTypeRec_Record(aType).FieldTypes[K])) then
++            Exit(True);
++      btStaticArray:
++        Result := (TPSTypeRec_StaticArray(aType).Size > 0) and IsManaged(TPSTypeRec_Array(aType).ArrayType);
++    end;
++  end;
++
++  function HFAInternal(aType: TPSTypeRec; var aBase: TPSBaseType; var aCount: Integer): Boolean;
++  var
++    K: Integer;
++    elCount: Integer;
++  begin
++    Result := False;
++    case aType.BaseType of
++      btSingle, btDouble, btExtended:
++        begin
++          if aBase = 0 then
++            aBase := aType.BaseType
++          else
++          if aBase <> aType.BaseType then
++            Exit;
++          Inc(aCount);
++          Result := aCount <= 4;
++        end;
++      btRecord:
++        begin
++          for K := 0 to TPSTypeRec_Record(aType).FieldTypes.Count - 1 do
++            if not HFAInternal(TPSTypeRec(TPSTypeRec_Record(aType).FieldTypes[K]), aBase, aCount) then
++              Exit;
++          Result := True;
++        end;
++      btStaticArray:
++        begin
++          for elCount := 1 to TPSTypeRec_StaticArray(aType).Size do
++            if not HFAInternal(TPSTypeRec_Array(aType).ArrayType, aBase, aCount) then
++              Exit;
++          Result := True;
++        end;
++    end;
++  end;
++
++  // Homogeneous floating-point aggregate (1..4 floats of the same type)
++  function IsHFA(aType: TPSTypeRec; out aBase: TPSBaseType; out aCount: Integer): Boolean;
++  begin
++    aBase := 0;
++    aCount := 0;
++    Result := (aType.BaseType in [btRecord, btStaticArray])
++              and HFAInternal(aType, aBase, aCount)
++              and (aCount > 0) and (aCount <= 4);
++  end;
++
++  function HFAElemSize(aBase: TPSBaseType): Integer;
++  begin
++    if aBase = btSingle then
++      Result := 4
++    else
++      Result := 8;
++  end;
++
++  procedure StackAppend(const aData; aLen: Integer);
++  var
++    slotLen: Integer;
++  begin
++    slotLen := (aLen + 7) and not 7;
++    if StackLen + slotLen > Length(Stack) then
++      SetLength(Stack, StackLen + slotLen + 64);
++    FillChar(Stack[StackLen], slotLen, 0);
++    if aLen > 0 then
++      Move(aData, Stack[StackLen], aLen);
++    Inc(StackLen, slotLen);
++  end;
++
++  procedure PushInt(aValue: UInt64);
++  begin
++    if NGRN < 8 then
++    begin
++      Regs.X[NGRN] := aValue;
++      Inc(NGRN);
++    end else
++      StackAppend(aValue, 8);
++  end;
++
++  // Composite (record/array/set) <= 16 bytes passed in integer registers
++  procedure PushIntBlock(aData: Pointer; aSize: Integer);
++  var
++    nRegs: Integer;
++    buf: array [0..1] of UInt64;
++  begin
++    nRegs := (aSize + 7) div 8;
++    if nRegs = 0 then Exit;
++    if NGRN + nRegs <= 8 then
++    begin
++      buf[0] := 0;
++      buf[1] := 0;
++      Move(aData^, buf[0], aSize);
++      Regs.X[NGRN] := buf[0];
++      Inc(NGRN);
++      if nRegs = 2 then
++      begin
++        Regs.X[NGRN] := buf[1];
++        Inc(NGRN);
++      end;
++    end else
++    begin
++      NGRN := 8;
++      StackAppend(aData^, aSize);
++    end;
++  end;
++
++  procedure PushSingle(aValue: Single);
++  var
++    q: UInt64;
++  begin
++    q := 0;
++    PSingle(@q)^ := aValue;
++    if NSRN < 8 then
++    begin
++      Regs.D[NSRN] := q;
++      Inc(NSRN);
++    end else
++      StackAppend(q, 8);
++  end;
++
++  procedure PushDoubleBits(aValue: UInt64);
++  begin
++    if NSRN < 8 then
++    begin
++      Regs.D[NSRN] := aValue;
++      Inc(NSRN);
++    end else
++      StackAppend(aValue, 8);
++  end;
++
++  procedure PushHFA(aData: Pointer; aBase: TPSBaseType; aCount: Integer);
++  var
++    K: Integer;
++    q: UInt64;
++    elSize: Integer;
++  begin
++    elSize := HFAElemSize(aBase);
++    if NSRN + aCount <= 8 then
++    begin
++      for K := 0 to aCount - 1 do
++      begin
++        q := 0;
++        Move(PByte(aData)[K * elSize], q, elSize);
++        Regs.D[NSRN] := q;
++        Inc(NSRN);
++      end;
++    end else
++    begin
++      NSRN := 8;
++      StackAppend(aData^, aCount * elSize);
++    end;
++  end;
++
++  function GetPtr(fVar: PPSVariantIFC): Boolean;
++  var
++    p: Pointer;
++    hfaBase: TPSBaseType;
++    hfaCount: Integer;
++    m: TMethod;
++    sz: Integer;
++  begin
++    Result := False;
++    if fVar = nil then Exit;
++
++    if fVar.VarParam then
++    begin
++      case fVar.aType.BaseType of
++        btArray:
++          if Copy(fVar.aType.ExportName, 1, 10) = '!OPENARRAY' then
++          begin
++            p := CreateOpenArray(True, Self, fVar);
++            if p = nil then Exit;
++            CallData.Add(p);
++            PushInt(IPointer(POpenArray(p)^.Data));
++            PushInt(UInt64(Int64(POpenArray(p)^.ItemCount - 1)));
++            Exit(True);
++          end else
++            PushInt(IPointer(fVar.Dta));
++        btVariant, btSet, btStaticArray, btRecord, btInterface, btClass,
++        {$IFNDEF PS_NOWIDESTRING} btUnicodeString, btWideString, btWideChar, {$ENDIF}
++        btU8, btS8, btU16, btS16, btU32, btS32, btSingle, btDouble, btExtended, btString, btPChar, btChar, btCurrency,
++        btProcPtr
++        {$IFNDEF PS_NOINT64}, bts64{$ENDIF}:
++          PushInt(IPointer(fVar.Dta));
++      else
++        Exit; // Invalid type
++      end;
++    end else
++    begin
++      case fVar^.aType.BaseType of
++        btSet:
++          begin
++            sz := TPSTypeRec_Set(fVar.aType).aByteSize;
++            if sz > 16 then
++              PushInt(IPointer(fVar.Dta))
++            else
++              PushIntBlock(fVar.Dta, sz);
++          end;
++        btArray:
++          if Copy(fVar^.aType.ExportName, 1, 10) = '!OPENARRAY' then
++          begin
++            p := CreateOpenArray(False, Self, fVar);
++            if p = nil then Exit;
++            CallData.Add(p);
++            PushInt(IPointer(POpenArray(p)^.Data));
++            PushInt(UInt64(Int64(POpenArray(p)^.ItemCount - 1)));
++            Exit(True);
++          end else
++            // Dynamic array is passed by value as its data pointer
++            PushInt(IPointer(fVar.Dta^));
++        btRecord:
++          begin
++            sz := fVar^.aType.RealSize;
++            if IsHFA(fVar^.aType, hfaBase, hfaCount) then
++              PushHFA(fVar.Dta, hfaBase, hfaCount)
++            else
++            if sz > 16 then
++              PushInt(IPointer(fVar.Dta))
++            else
++              PushIntBlock(fVar.Dta, sz);
++          end;
++        // Static arrays are expected to be passed as const (by reference)
++        btStaticArray, btVariant:
++          PushInt(IPointer(fVar.Dta));
++        btExtended, btDouble:
++          begin
++            tmpD := tbtdouble(fVar.Dta^);
++            PushDoubleBits(PUInt64(@tmpD)^);
++          end;
++        btCurrency:
++          PushDoubleBits(PUInt64(fVar.Dta)^);
++        btSingle:
++          PushSingle(tbtsingle(fVar.Dta^));
++        btChar, btU8, btS8:
++          PushInt(Byte(fVar^.Dta^));
++        btWideChar, btU16, btS16:
++          PushInt(Word(fVar^.Dta^));
++        btU32, btS32:
++          PushInt(Cardinal(fVar^.Dta^));
++        btPChar:
++          if Pointer(fVar^.Dta^) = nil then
++            PushInt(IPointer(@EmptyPchar))
++          else
++            PushInt(IPointer(fVar^.Dta^));
++        btClass, btInterface, btString, btWideString, btUnicodeString:
++          PushInt(IPointer(fVar^.Dta^));
++        btProcPtr:
++          begin
++            m := MkMethod(Self, Longint(fVar.Dta^));
++            PushIntBlock(@m, SizeOf(m));
++          end;
++        bts64:
++          PushInt(UInt64(Int64(fVar^.Dta^)));
++      else
++        Exit;
++      end;
++    end;
++    Result := True;
++  end;
++
++begin
++  if (Integer(CallingConv) and 128) <> 0 then
++  begin
++    IsVirtualCons := True;
++    CallingConv := TPSCallingConvention(Integer(CallingConv) and not 128);
++  end else
++    IsVirtualCons := False;
++  if (Integer(CallingConv) and 64) <> 0 then
++  begin
++    IsConstructor := True;
++    CallingConv := TPSCallingConvention(Integer(CallingConv) and not 64);
++  end else
++    IsConstructor := False;
++
++  Result := False;
++  if Address = nil then
++    Exit; // need address
++
++  FillChar(Regs, SizeOf(Regs), 0);
++  SetLength(Stack, 0);
++  StackLen := 0;
++  NGRN := 0;
++  NSRN := 0;
++  resKind := rkNone;
++  resHFABase := 0;
++  resHFACount := 0;
++
++  CallData := TPSList.Create;
++  res := rp(res);
++  if res <> nil then
++    res.VarParam := True;
++  try
++    if IsConstructor then
++    begin
++      if not GetPtr(rp(Params[0])) then Exit; // this goes first
++      DisposePPSVariantIFC(Params[0]);
++      Params.Delete(0);
++    end;
++
++    if Assigned(_Self) then
++      PushInt(IPointer(_Self));
++
++    // Classify the result
++    if Assigned(res) then
++    begin
++      resBase := res^.aType.BaseType;
++      if IsManaged(res^.aType) then
++      begin
++        // Hidden result parameter goes after Self and before the normal parameters
++        resKind := rkHidden;
++        PushInt(IPointer(res.Dta));
++      end else
++      case resBase of
++        btSingle, btDouble, btExtended, btCurrency:
++          resKind := rkFloat;
++        btRecord, btStaticArray:
++          if IsHFA(res^.aType, resHFABase, resHFACount) then
++            resKind := rkHFA
++          else
++          if res^.aType.RealSize > 16 then
++          begin
++            resKind := rkIndirectX8;
++            Regs.X8 := IPointer(res.Dta);
++          end else
++            resKind := rkInt;
++        btSet:
++          if TPSTypeRec_Set(res^.aType).aByteSize > 16 then
++          begin
++            resKind := rkIndirectX8;
++            Regs.X8 := IPointer(res.Dta);
++          end else
++            resKind := rkInt;
++      else
++        resKind := rkInt;
++      end;
++    end;
++
++    for I := 0 to Params.Count - 1 do
++      if not GetPtr(rp(Params[I])) then Exit;
++
++    // Outgoing stack area must keep SP 16-byte aligned
++    StackLen := (StackLen + 15) and not 15;
++    if StackLen > Length(Stack) then
++      SetLength(Stack, StackLen);
++    if StackLen = 0 then
++      pp := nil
++    else
++      pp := @Stack[0];
++
++    aarch64call(Address, Regs, pp, StackLen);
++
++    if Assigned(res) then
++      case resKind of
++        rkHidden, rkIndirectX8: ; // Callee has written the result already
++        rkFloat:
++          case resBase of
++            btSingle:   begin tmpQ := Regs.ResD[0]; tbtsingle(res.Dta^) := PSingle(@tmpQ)^; end;
++            btDouble:   begin tmpQ := Regs.ResD[0]; tbtdouble(res.Dta^) := PDouble(@tmpQ)^; end;
++            btExtended: begin tmpQ := Regs.ResD[0]; tbtextended(res.Dta^) := PDouble(@tmpQ)^; end;
++            btCurrency: PUInt64(res.Dta)^ := Regs.ResD[0];
++          end;
++        rkHFA:
++          for I := 0 to resHFACount - 1 do
++          begin
++            tmpQ := Regs.ResD[I];
++            Move(tmpQ, PByte(res.Dta)[I * HFAElemSize(resHFABase)], HFAElemSize(resHFABase));
++          end;
++        rkInt:
++          case resBase of
++            btRecord, btStaticArray:
++              Move(Regs.ResX[0], res.Dta^, res^.aType.RealSize);
++            btSet:
++              Move(Regs.ResX[0], res.Dta^, TPSTypeRec_Set(res^.aType).aByteSize);
++            btChar, btU8, btS8:         tbtu8(res.Dta^) := Byte(Regs.ResX[0]);
++            btWideChar, btU16, btS16:   tbtu16(res.Dta^) := Word(Regs.ResX[0]);
++            btU32, btS32:               tbtu32(res.Dta^) := Cardinal(Regs.ResX[0]);
++            bts64:                      tbts64(res.Dta^) := Int64(Regs.ResX[0]);
++            btClass, btPChar:           IPointer(res.Dta^) := IPointer(Regs.ResX[0]);
++          else
++            Exit;
++          end;
++      end;
++
++    Result := True;
++  finally
++    for I := CallData.Count - 1 downto 0 do
++    begin
++      pp := CallData[I];
++      case pp^ of
++        0: DestroyOpenArray(Self, Pointer(pp));
++      end;
++    end;
++    CallData.Free;
++  end;
++end;
+diff --git a/Source/aarch64methods.inc b/Source/aarch64methods.inc
+new file mode 100644
+index 0000000..7509907
+--- /dev/null
++++ b/Source/aarch64methods.inc
+@@ -0,0 +1,421 @@
++{ KaM: AArch64 (FPC, Linux/Android ABI) implementation of MyAllMethodsHandler.
++  Script procedures are exposed to native code as method pointers (TMethod.Code = MyAllMethodsHandler,
++  TMethod.Data = PScriptMethodInfo), e.g. for script event handlers. The native caller passes the arguments
++  according to the FPC aarch64 calling convention (see aarch64.inc for the details):
++  - X0 = Self (PScriptMethodInfo)
++  - hidden result pointer for managed result types right after Self
++  - X8 = result pointer for other results that don't fit into X0/X1 (or V0..V3 for HFA)
++  - integer/pointer args in X1..X7, floats (and HFA members) in V0..V7, the rest on the stack in 8-byte slots
++  - var/out params, variants, records/arrays/sets > 16 bytes (non-HFA) are passed by reference
++  The asm stub saves the argument registers, calls PSA64MethodsHandler and loads the result registers back }
++
++type
++  TPSA64HandlerRegs = packed record
++    X: array [0..7] of UInt64;   //   0
++    X8: UInt64;                  //  64
++    Pad: UInt64;                 //  72
++    D: array [0..7] of UInt64;   //  80
++  end;
++  PPSA64HandlerRegs = ^TPSA64HandlerRegs;
++
++
++function PSA64IsManaged(aType: TPSTypeRec): Boolean;
++var
++  K: Integer;
++begin
++  Result := False;
++  case aType.BaseType of
++    btString, {$IFNDEF PS_NOWIDESTRING}btUnicodeString, btWideString,{$ENDIF}
++    {$IFNDEF PS_NOINTERFACES}btInterface,{$ENDIF}
++    btArray, btVariant:
++      Result := True;
++    btRecord:
++      for K := 0 to TPSTypeRec_Record(aType).FieldTypes.Count - 1 do
++        if PSA64IsManaged(TPSTypeRec(TPSTypeRec_Record(aType).FieldTypes[K])) then
++          Exit(True);
++    btStaticArray:
++      Result := (TPSTypeRec_StaticArray(aType).Size > 0) and PSA64IsManaged(TPSTypeRec_Array(aType).ArrayType);
++  end;
++end;
++
++
++function PSA64HFAInternal(aType: TPSTypeRec; var aBase: TPSBaseType; var aCount: Integer): Boolean;
++var
++  K: Integer;
++begin
++  Result := False;
++  case aType.BaseType of
++    btSingle, btDouble, btExtended:
++      begin
++        if aBase = 0 then
++          aBase := aType.BaseType
++        else
++        if aBase <> aType.BaseType then
++          Exit;
++        Inc(aCount);
++        Result := aCount <= 4;
++      end;
++    btRecord:
++      begin
++        for K := 0 to TPSTypeRec_Record(aType).FieldTypes.Count - 1 do
++          if not PSA64HFAInternal(TPSTypeRec(TPSTypeRec_Record(aType).FieldTypes[K]), aBase, aCount) then
++            Exit;
++        Result := True;
++      end;
++    btStaticArray:
++      begin
++        for K := 1 to TPSTypeRec_StaticArray(aType).Size do
++          if not PSA64HFAInternal(TPSTypeRec_Array(aType).ArrayType, aBase, aCount) then
++            Exit;
++        Result := True;
++      end;
++  end;
++end;
++
++
++function PSA64IsHFA(aType: TPSTypeRec; out aBase: TPSBaseType; out aCount: Integer): Boolean;
++begin
++  aBase := 0;
++  aCount := 0;
++  Result := (aType.BaseType in [btRecord, btStaticArray])
++            and PSA64HFAInternal(aType, aBase, aCount)
++            and (aCount > 0) and (aCount <= 4);
++end;
++
++
++function PSA64ElemSize(aBase: TPSBaseType): Integer;
++begin
++  if aBase = btSingle then
++    Result := 4
++  else
++    Result := 8;
++end;
++
++
++// Composite type passed by value (record/static array/set) - its size
++function PSA64CompositeSize(aType: TPSTypeRec): Integer;
++begin
++  if aType.BaseType = btSet then
++    Result := TPSTypeRec_Set(aType).aByteSize
++  else
++    Result := aType.RealSize;
++end;
++
++
++function PSA64MethodsHandler(aRegs: PPSA64HandlerRegs; aStackArgs: PByte): Integer;
++var
++  Self: PScriptMethodInfo;
++  Decl, s, e: tbtString;
++  I, C: Integer;
++  Params: TPSList;
++  ParamTypes: array of TPSTypeRec;
++  ParamByRef: array of Boolean;
++  Res, Tmp: PIFVariant;
++  cpt, resType: TPSTypeRec;
++  fmod: tbtchar;
++  NGRN, NSRN, stackOfs: Integer;
++  hfaBase: TPSBaseType;
++  hfaCount, K, sz, nRegs: Integer;
++  buf: array [0..3] of UInt64;
++  resKind: (rkNone, rkValue, rkHidden, rkIndirectX8);
++  ex: TPSExceptionHandler;
++  exObj: TObject;
++
++  function NextInt: UInt64;
++  begin
++    if NGRN < 8 then
++    begin
++      Result := aRegs.X[NGRN];
++      Inc(NGRN);
++    end else
++    begin
++      Result := PUInt64(aStackArgs + stackOfs)^;
++      Inc(stackOfs, 8);
++    end;
++  end;
++
++  function NextFloat: UInt64;
++  begin
++    if NSRN < 8 then
++    begin
++      Result := aRegs.D[NSRN];
++      Inc(NSRN);
++    end else
++    begin
++      Result := PUInt64(aStackArgs + stackOfs)^;
++      Inc(stackOfs, 8);
++    end;
++  end;
++
++  // Read a composite <= 16 bytes passed in integer registers (or entirely on stack) into buf
++  procedure ReadIntBlock(aSize: Integer);
++  begin
++    nRegs := (aSize + 7) div 8;
++    buf[0] := 0;
++    buf[1] := 0;
++    if NGRN + nRegs <= 8 then
++    begin
++      buf[0] := aRegs.X[NGRN];
++      Inc(NGRN);
++      if nRegs = 2 then
++      begin
++        buf[1] := aRegs.X[NGRN];
++        Inc(NGRN);
++      end;
++    end else
++    begin
++      NGRN := 8;
++      Move((aStackArgs + stackOfs)^, buf[0], aSize);
++      Inc(stackOfs, (aSize + 7) and not 7);
++    end;
++  end;
++
++  // Read HFA (passed in V registers or entirely on stack) into buf
++  procedure ReadHFA(aBase: TPSBaseType; aCount: Integer);
++  var
++    J: Integer;
++  begin
++    FillChar(buf, SizeOf(buf), 0);
++    if NSRN + aCount <= 8 then
++    begin
++      for J := 0 to aCount - 1 do
++      begin
++        Move(aRegs.D[NSRN], PByte(@buf[0])[J * PSA64ElemSize(aBase)], PSA64ElemSize(aBase));
++        Inc(NSRN);
++      end;
++    end else
++    begin
++      NSRN := 8;
++      Move((aStackArgs + stackOfs)^, buf[0], aCount * PSA64ElemSize(aBase));
++      Inc(stackOfs, (aCount * PSA64ElemSize(aBase) + 7) and not 7);
++    end;
++  end;
++
++begin
++  Result := 0;
++  Self := PScriptMethodInfo(aRegs.X[0]);
++  NGRN := 1; // X0 is Self
++  NSRN := 0;
++  stackOfs := 0;
++
++  Decl := TPSInternalProcRec(Self^.Se.FProcs[Self^.ProcNo]).ExportDecl;
++
++  // Parse declaration: result type, then parameters in Pascal order
++  s := Decl;
++  e := grfw(s);
++  if e <> '-1' then
++    resType := Self.Se.GetTypeNo(StrToInt(e))
++  else
++    resType := nil;
++
++  C := 0;
++  while s <> '' do
++  begin
++    e := grfw(s);
++    fmod := e[1];
++    Delete(e, 1, 1);
++    SetLength(ParamTypes, C + 1);
++    SetLength(ParamByRef, C + 1);
++    ParamTypes[C] := Self.Se.GetTypeNo(StrToInt(e));
++    ParamByRef[C] := (fmod = '%') or (fmod = '!');
++    Inc(C);
++  end;
++
++  // Classify the result
++  resKind := rkNone;
++  if resType <> nil then
++  begin
++    if PSA64IsManaged(resType) then
++      resKind := rkHidden
++    else
++    if (resType.BaseType in [btRecord, btStaticArray, btSet])
++    and not PSA64IsHFA(resType, hfaBase, hfaCount)
++    and (PSA64CompositeSize(resType) > 16) then
++      resKind := rkIndirectX8
++    else
++      resKind := rkValue;
++  end;
++
++  Params := TPSList.Create;
++  try
++    // RunProc expects parameters in reverse order, with the result last
++    for I := 0 to C - 1 do
++      Params.Add(nil);
++
++    Res := nil;
++    if resKind = rkHidden then
++    begin
++      // Hidden result pointer goes right after Self
++      Res := CreateHeapVariant(Self.Se.FindType2(btPointer));
++      PPSVariantPointer(Res).DestType := resType;
++      PPSVariantPointer(Res).DataDest := Pointer(NextInt);
++    end else
++    if resKind = rkIndirectX8 then
++    begin
++      Res := CreateHeapVariant(Self.Se.FindType2(btPointer));
++      PPSVariantPointer(Res).DestType := resType;
++      PPSVariantPointer(Res).DataDest := Pointer(aRegs.X8);
++    end else
++    if resKind = rkValue then
++      Res := CreateHeapVariant(resType);
++
++    for I := 0 to C - 1 do
++    begin
++      cpt := ParamTypes[I];
++      sz := PSA64CompositeSize(cpt);
++
++      if ParamByRef[I] or (cpt.BaseType = btVariant)
++      or ((cpt.BaseType in [btRecord, btStaticArray, btSet]) and not PSA64IsHFA(cpt, hfaBase, hfaCount) and (sz > 16)) then
++      begin
++        // Passed by reference
++        if ParamByRef[I] then
++        begin
++          // var/out param: script works directly on the caller's variable
++          Tmp := CreateHeapVariant(Self.Se.FindType2(btPointer));
++          PPSVariantPointer(Tmp).DestType := cpt;
++          PPSVariantPointer(Tmp).DataDest := Pointer(NextInt);
++        end else
++        begin
++          // Value param passed by reference: script gets its own copy
++          Tmp := CreateHeapVariant(cpt);
++          CopyArrayContents(@PPSVariantData(Tmp)^.Data, Pointer(NextInt), 1, cpt);
++        end;
++      end else
++      begin
++        Tmp := CreateHeapVariant(cpt);
++        FillChar(buf, SizeOf(buf), 0);
++        case cpt.BaseType of
++          btSingle:
++            begin
++              buf[0] := NextFloat;
++              CopyArrayContents(@PPSVariantData(Tmp)^.Data, @buf[0], 1, cpt);
++            end;
++          btDouble, btExtended, btCurrency:
++            begin
++              buf[0] := NextFloat;
++              CopyArrayContents(@PPSVariantData(Tmp)^.Data, @buf[0], 1, cpt);
++            end;
++          btRecord, btStaticArray, btSet:
++            begin
++              if PSA64IsHFA(cpt, hfaBase, hfaCount) then
++                ReadHFA(hfaBase, hfaCount)
++              else
++                ReadIntBlock(sz);
++              CopyArrayContents(@PPSVariantData(Tmp)^.Data, @buf[0], 1, cpt);
++            end;
++          btProcPtr:
++            begin
++              // Method pointer (16 bytes) is passed in two integer registers
++              ReadIntBlock(16);
++              CopyArrayContents(@PPSVariantData(Tmp)^.Data, @buf[0], 1, cpt);
++            end;
++        else
++          // Ordinals, chars, pointers, classes, interfaces, strings, dynamic arrays: one integer register
++          buf[0] := NextInt;
++          CopyArrayContents(@PPSVariantData(Tmp)^.Data, @buf[0], 1, cpt);
++        end;
++      end;
++      Params[C - 1 - I] := Tmp;
++    end;
++
++    if Res <> nil then
++      Params.Add(Res);
++
++    ex := TPSExceptionHandler.Create;
++    ex.FinallyOffset := InvalidVal;
++    ex.ExceptOffset := InvalidVal;
++    ex.Finally2Offset := InvalidVal;
++    ex.EndOfBlock := InvalidVal;
++    ex.CurrProc := nil;
++    ex.BasePtr := Self.Se.FCurrStackBase;
++    ex.StackSize := Self.Se.FStack.Count;
++    I := Self.Se.FExceptionStack.Add(ex);
++    Self.Se.RunProc(Params, Self.ProcNo);
++    if Self.Se.FExceptionStack[I] = ex then
++    begin
++      Self.Se.FExceptionStack.Remove(ex);
++      ex.Free;
++    end;
++
++    // Return the result
++    if resKind = rkValue then
++    begin
++      FillChar(buf, SizeOf(buf), 0);
++      case resType.BaseType of
++        btSingle:
++          begin
++            Move(PPSVariantData(Res)^.Data, buf[0], 4);
++            aRegs.D[0] := buf[0];
++          end;
++        btDouble, btExtended, btCurrency:
++          begin
++            Move(PPSVariantData(Res)^.Data, buf[0], 8);
++            aRegs.D[0] := buf[0];
++          end;
++        btRecord, btStaticArray, btSet:
++          begin
++            sz := PSA64CompositeSize(resType);
++            if PSA64IsHFA(resType, hfaBase, hfaCount) then
++            begin
++              for K := 0 to hfaCount - 1 do
++              begin
++                buf[0] := 0;
++                Move(PByte(@PPSVariantData(Res)^.Data)[K * PSA64ElemSize(hfaBase)], buf[0], PSA64ElemSize(hfaBase));
++                aRegs.D[K] := buf[0];
++              end;
++            end else
++            begin
++              Move(PPSVariantData(Res)^.Data, buf[0], sz);
++              aRegs.X[0] := buf[0];
++              aRegs.X[1] := buf[1];
++            end;
++          end;
++      else
++        // Ordinals, chars, pointers, classes
++        Move(PPSVariantData(Res)^.Data, buf[0], resType.RealSize);
++        aRegs.X[0] := buf[0];
++      end;
++    end;
++  finally
++    for I := 0 to Params.Count - 1 do
++      if Params[I] <> nil then
++        DestroyHeapVariant(Params[I]);
++    Params.Free;
++  end;
++
++  if Self.Se.ExEx <> erNoError then
++  begin
++    if Self.Se.ExObject <> nil then
++    begin
++      exObj := Self.Se.ExObject;
++      Self.Se.ExObject := nil;
++      raise exObj;
++    end else
++      raise EPSException.Create(PSErrorToString(Self.SE.ExceptionCode, Self.Se.ExceptionString), Self.Se, Self.Se.ExProc, Self.Se.ExPos);
++  end;
++end;
++
++
++procedure MyAllMethodsHandler; assembler; nostackframe;
++asm
++  stp   x29, x30, [sp, #-16]!
++  mov   x29, sp
++  sub   sp, sp, #144
++  stp   x0, x1, [sp]
++  stp   x2, x3, [sp, #16]
++  stp   x4, x5, [sp, #32]
++  stp   x6, x7, [sp, #48]
++  str   x8, [sp, #64]
++  stp   d0, d1, [sp, #80]
++  stp   d2, d3, [sp, #96]
++  stp   d4, d5, [sp, #112]
++  stp   d6, d7, [sp, #128]
++  mov   x0, sp            // aRegs
++  add   x1, x29, #16      // aStackArgs (caller's SP on entry)
++  bl    PSA64MethodsHandler
++  ldp   x0, x1, [sp]
++  ldp   d0, d1, [sp, #80]
++  ldp   d2, d3, [sp, #96]
++  mov   sp, x29
++  ldp   x29, x30, [sp], #16
++end;
+diff --git a/Source/uPSCompiler.pas b/Source/uPSCompiler.pas
+index 4d0dde2..d578723 100644
+--- a/Source/uPSCompiler.pas
++++ b/Source/uPSCompiler.pas
+@@ -6645,6 +6645,7 @@ function TPSPascalCompiler.ProcessSub(BlockInfo: TPSBlockInfo): Boolean;
+       tmp, tmpn: TPSValue;
+       tmp3: TPSValueProcNo;
+       tmp2: Boolean;
++      bType: TPSBaseType;
+ 
+       function FindSubR(const n: tbtString; FType: TPSType): Cardinal;
+       var
+@@ -6841,7 +6842,8 @@ function TPSPascalCompiler.ProcessSub(BlockInfo: TPSBlockInfo): Boolean;
+               x := nil;
+               exit;
+             end;
+-            var bType := GetTypeNo(BlockInfo, tmp).BaseType;
++            bType := GetTypeNo(BlockInfo, tmp).BaseType;
++
+             if not IsIntType(bType) and not (bType = btEnum) then
+             begin
+               MakeError('', ecTypeMismatch, '');
+@@ -12552,8 +12554,9 @@ begin
+   {$ENDIF}
+   AddType('AnsiString', btString);
+   {$IFNDEF PS_NOWIDESTRING}
+-    {$IFDEF DELPHI2009UP}
++    {$IF DEFINED(DELPHI2009UP) OR DEFINED(PS_KMR_UNICODE_STRING)}
+     AddType('string', btUnicodeString);
++
+     AddType('NativeString', btUnicodeString);
+     {$ELSE}
+     AddType('string', btString);
+diff --git a/Source/uPSRuntime.pas b/Source/uPSRuntime.pas
+index b961d15..40261fb 100644
+--- a/Source/uPSRuntime.pas
++++ b/Source/uPSRuntime.pas
+@@ -10180,6 +10180,9 @@ end;
+       {$include powerpc.inc}
+     {$elseif defined(cpuarm)}
+       {$include arm.inc}
++    {$elseif defined(cpuaarch64)}
++      {$include aarch64.inc}
++
+     {$elseif defined(CPUX86_64)}
+       {$include x64.inc}
+     {$else}
+@@ -11949,7 +11952,10 @@ end;
+ {$ENDIF}
+ 
+ {$ifdef fpc}
+-  {$if defined(cpupowerpc) or defined(cpuarm) or defined(cpu64)}
++  // KaM: aarch64 has its own implementation (aarch64methods.inc)
++  {$if defined(cpuaarch64)}
++    {$define PS_A64_METHODS}
++  {$elseif defined(cpupowerpc) or defined(cpuarm) or defined(cpu64)}
+     {$define empty_methods_handler}
+   {$ifend}
+ {$endif}
+@@ -11959,6 +11965,9 @@ procedure MyAllMethodsHandler;
+ begin
+ end;
+ {$else}
++{$ifdef PS_A64_METHODS}
++  {$include aarch64methods.inc}
++{$else}
+ 
+ 
+ function MyAllMethodsHandler2(Self: PScriptMethodInfo; const Stack: PPointer; _EDX, _ECX: Pointer): Integer; forward;
+@@ -12477,6 +12486,7 @@ begin
+       raise EPSException.Create(PSErrorToString(Self.SE.ExceptionCode, Self.Se.ExceptionString), Self.Se, Self.Se.ExProc, Self.Se.ExPos);
+   end;
+ end;
++{$endif PS_A64_METHODS}
+ {$endif}
+ function TPSRuntimeClassImporter.FindClass(const Name: tbtString): TPSRuntimeClass;
+ var

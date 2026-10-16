@@ -70,6 +70,7 @@ type
     property PrevVolume: Single read GetPrevVolume write fPrevVolume;
 
     procedure Init;
+    procedure InitAsync;
   public
     constructor Create(aVolume: Single);
     destructor Destroy; override;
@@ -182,93 +183,105 @@ begin
 
   fInitComplete := False;
 
+  // Init OpenAL in a separate thread (it is slow)
+  {$IFDEF FPC}
+  TThread.ExecuteInThread(InitAsync);
+  {$ELSE}
   TThread.CreateAnonymousThread(
     procedure
-    var
-      I: Integer;
-      context: PALCcontext;
-      numMono, numStereo: TALCint;
     begin
-      gLog.AddTime('OpenAL init started');
-
-      fIsSoundInitialized := InitOpenAL;
-      Set8087CW($133F); //Above OpenAL call messes up FPU settings
-      if not fIsSoundInitialized then
-      begin
-        gLog.AddNoTime('OpenAL warning. OpenAL could not be initialized.');
-        //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
-        MessageDlg('OpenAL could not be initialized. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
-        fIsSoundInitialized := False;
-        Exit;
-      end;
-
-      // Open device (this is quite slow, 700-800 ms)
-      //todo -cPractical: OpenAL init can be perfomed in a thread
-      fALDevice := alcOpenDevice(nil); // this is supposed to select the "preferred device"
-      Set8087CW($133F); //Above OpenAL call messes up FPU settings
-      if fALDevice = nil then
-      begin
-        gLog.AddNoTime('OpenAL warning. Device could not be opened.');
-        //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
-        MessageDlg('OpenAL device could not be opened. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
-        fIsSoundInitialized := False;
-        Exit;
-      end;
-
-      // Create context
-      context := alcCreateContext(fALDevice, nil);
-      Set8087CW($133F); //Above OpenAL call messes up FPU settings
-      if context = nil then
-      begin
-        gLog.AddNoTime('OpenAL warning. Context could not be created.');
-        //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
-        MessageDlg('OpenAL context could not be created. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
-        fIsSoundInitialized := False;
-        Exit;
-      end;
-
-      // Set active context
-      I := alcMakeContextCurrent(context);
-      Set8087CW($133F); //Above OpenAL call messes up FPU settings
-      if not (I in [AL_NO_ERROR, AL_TRUE]) then
-      begin
-        gLog.AddNoTime('OpenAL warning. Context could not be made current.');
-        //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
-        MessageDlg('OpenAL context could not be made current. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
-        fIsSoundInitialized := False;
-        Exit;
-      end;
-
-      CheckOpenALError;
-      if not fIsSoundInitialized then Exit;
-
-      // Set attenuation model
-      alDistanceModel(AL_LINEAR_DISTANCE_CLAMPED);
-      gLog.AddTime('Pre-LoadSFX init done');
-
-      alcGetIntegerv(fALDevice, ALC_MONO_SOURCES, 4, @numMono);
-      alcGetIntegerv(fALDevice, ALC_STEREO_SOURCES, 4, @numStereo);
-
-      gLog.AddTime('ALC_MONO_SOURCES %d', [numMono]);
-      gLog.AddTime('ALC_STEREO_SOURCES %d', [numStereo]);
-
-      for I := Low(fALSounds) to High(fALSounds) do
-      begin
-        AlGenBuffers(1, @fALSounds[i].ALBuffer);
-        AlGenSources(1, @fALSounds[i].ALSource);
-      end;
-
-      CheckOpenALError;
-      if not fIsSoundInitialized then Exit;
-
-      // Set default Listener orientation
-      fListener.Ori[1] := 0; fListener.Ori[2] := 0; fListener.Ori[3] := -1; //Look-at vector
-      fListener.Ori[4] := 0; fListener.Ori[5] := 1; fListener.Ori[6] := 0; //Up vector
-      AlListenerfv(AL_ORIENTATION, @fListener.Ori);
-
-      fInitComplete := True;
-      gLog.AddTime('OpenAL init done');
+      InitAsync;
     end).Start;
+  {$ENDIF}
+end;
+
+
+// Executed in a separate thread
+procedure TKMSoundPlayer.InitAsync;
+var
+  I: Integer;
+  context: PALCcontext;
+  numMono, numStereo: TALCint;
+begin
+  gLog.AddTime('OpenAL init started');
+
+  fIsSoundInitialized := InitOpenAL;
+  Set8087CW($133F); //Above OpenAL call messes up FPU settings
+  if not fIsSoundInitialized then
+  begin
+    gLog.AddNoTime('OpenAL warning. OpenAL could not be initialized.');
+    //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
+    MessageDlg('OpenAL could not be initialized. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
+    fIsSoundInitialized := False;
+    Exit;
+  end;
+
+  // Open device (this is quite slow, 700-800 ms)
+  //todo -cPractical: OpenAL init can be perfomed in a thread
+  fALDevice := alcOpenDevice(nil); // this is supposed to select the "preferred device"
+  Set8087CW($133F); //Above OpenAL call messes up FPU settings
+  if fALDevice = nil then
+  begin
+    gLog.AddNoTime('OpenAL warning. Device could not be opened.');
+    //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
+    MessageDlg('OpenAL device could not be opened. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
+    fIsSoundInitialized := False;
+    Exit;
+  end;
+
+  // Create context
+  context := alcCreateContext(fALDevice, nil);
+  Set8087CW($133F); //Above OpenAL call messes up FPU settings
+  if context = nil then
+  begin
+    gLog.AddNoTime('OpenAL warning. Context could not be created.');
+    //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
+    MessageDlg('OpenAL context could not be created. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
+    fIsSoundInitialized := False;
+    Exit;
+  end;
+
+  // Set active context
+  I := alcMakeContextCurrent(context);
+  Set8087CW($133F); //Above OpenAL call messes up FPU settings
+  if not (I in [AL_NO_ERROR, AL_TRUE]) then
+  begin
+    gLog.AddNoTime('OpenAL warning. Context could not be made current.');
+    //MessageDlg works better than Application.MessageBox or others, it stays on top and pauses here until the user clicks ok.
+    MessageDlg('OpenAL context could not be made current. Please refer to Readme.html for solution', mtWarning, [mbOk], 0);
+    fIsSoundInitialized := False;
+    Exit;
+  end;
+
+  CheckOpenALError;
+  if not fIsSoundInitialized then Exit;
+
+  // Set attenuation model
+  alDistanceModel(AL_LINEAR_DISTANCE_CLAMPED);
+  gLog.AddTime('Pre-LoadSFX init done');
+
+  alcGetIntegerv(fALDevice, ALC_MONO_SOURCES, 4, @numMono);
+  alcGetIntegerv(fALDevice, ALC_STEREO_SOURCES, 4, @numStereo);
+
+  gLog.AddTime('ALC_MONO_SOURCES %d', [numMono]);
+  gLog.AddTime('ALC_STEREO_SOURCES %d', [numStereo]);
+
+  for I := Low(fALSounds) to High(fALSounds) do
+  begin
+    AlGenBuffers(1, @fALSounds[i].ALBuffer);
+    AlGenSources(1, @fALSounds[i].ALSource);
+  end;
+
+  CheckOpenALError;
+  if not fIsSoundInitialized then Exit;
+
+  // Set default Listener orientation
+  fListener.Ori[1] := 0; fListener.Ori[2] := 0; fListener.Ori[3] := -1; //Look-at vector
+  fListener.Ori[4] := 0; fListener.Ori[5] := 1; fListener.Ori[6] := 0; //Up vector
+  AlListenerfv(AL_ORIENTATION, @fListener.Ori);
+
+  fInitComplete := True;
+  gLog.AddTime('OpenAL init done');
 end;
 
 
@@ -482,6 +495,10 @@ var
   wavLoop: TALint;
   wavDuration: Cardinal;
   fileExt: String;
+  I: Integer;
+  soundId: Integer;
+  W: TKMSoundData;
+  wavSampleRate: Integer;
   {$IFNDEF NO_OGG_SOUND}
   oggFileStream: TFileStream;
   oggVorbisFile: OggVorbis_File;
@@ -521,7 +538,7 @@ begin
 
   //Find free buffer and use it
   freeBuf := -1;
-  for var I := Low(fALSounds) to High(fALSounds) do
+  for I := Low(fALSounds) to High(fALSounds) do
   begin
     alGetSourcei(fALSounds[i].ALSource, AL_SOURCE_STATE, @alState);
     if alState <> AL_PLAYING then
@@ -620,12 +637,12 @@ begin
   end
   else
   begin
-    var soundId := Ord(aSoundID);
+    soundId := Ord(aSoundID);
     // Can not find sound with this Id, silently Exit...
     if soundId > gRes.Sounds.WavesCount then
       Exit;
 
-    var W := gRes.Sounds.fWaves[soundId];
+    W := gRes.Sounds.fWaves[soundId];
 
     Assert(W.IsLoaded, 'Sounds.dat seems to be short');
 
@@ -638,7 +655,7 @@ begin
         raise Exception.Create('Unexpected wave bit depth');
       end;
 
-      var wavSampleRate := gRes.Sounds.GetSoundSampleRate(aSoundID);
+      wavSampleRate := gRes.Sounds.GetSoundSampleRate(aSoundID);
       AlBufferData(fALSounds[freeBuf].ALBuffer, wavFormat, @W.Data[0], W.Head.DataSize, wavSampleRate);
       wavDuration := Round(W.Head.DataSize / wavSampleRate / W.Head.BytesPerSample * 1000);
     end else

@@ -727,7 +727,7 @@ begin
   if not Result then Exit;
 
   for S in WIN_RESERVED_FILENAMES do
-    if S = txt.ToUpper then
+    if S = AnsiUpperCase(txt) then
       Exit(False);
 end;
 

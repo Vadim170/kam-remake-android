@@ -3,7 +3,7 @@ unit KM_RenderUI;
 interface
 uses
   {$IFDEF WDC}
-  System.Generics.Collections,
+  Generics.Collections,
   {$ENDIF}
   {$IFDEF FPC}
   Generics.Collections,
@@ -28,7 +28,7 @@ type
 
   TKMRenderUI = class
   private
-    {$IFDEF WDC}
+    {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
     class var
       fClipXStack: TStack<TKMRangeInt>;
       fClipYStack: TStack<TKMRangeInt>;
@@ -114,7 +114,7 @@ class procedure TKMRenderUI.SetupClipX(X1,X2: SmallInt);
 var
   P: TKMRangeInt;
 begin
-  {$IFDEF WDC}
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
   if fClipXStack.Count > 0 then
   begin
     P := fClipXStack.Peek;
@@ -132,7 +132,7 @@ class procedure TKMRenderUI.SetupClipY(Y1,Y2: SmallInt);
 var
   P: TKMRangeInt;
 begin
-  {$IFDEF WDC}
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
   if fClipYStack.Count > 0 then
   begin
     P := fClipYStack.Peek;
@@ -158,7 +158,7 @@ class procedure TKMRenderUI.ReleaseClipX;
 var
   P: TKMRangeInt;
 begin
-  {$IFDEF WDC}
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
   if fClipXStack.Count <> 0 then
   begin
     ReleaseX;
@@ -186,7 +186,7 @@ class procedure TKMRenderUI.ReleaseClipY;
 var
   P: TKMRangeInt;
 begin
-  {$IFDEF WDC}
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
   if fClipYStack.Count <> 0 then
   begin
     ReleaseY;
@@ -702,14 +702,20 @@ begin
     glLineWidth(aLineWidth);
   end;
 
-  glEnable(GL_LINE_STIPPLE);
-  glLineStipple(2, aPattern);
+  // Solid pattern needs no stipple (stipple is emulated with an extra texture pass on GLES)
+  if aPattern <> $FFFF then
+  begin
+    glEnable(GL_LINE_STIPPLE);
+    glLineStipple(2, aPattern);
+  end;
 
   glBegin(GL_LINES);
     glVertex2f(aFromX, aFromY);
     glVertex2f(aToX, aToY);
   glEnd;
-  glDisable(GL_LINE_STIPPLE);
+  if aPattern <> $FFFF then
+    glDisable(GL_LINE_STIPPLE);
+
 
   if aLineWidth <> -1 then
     glPopAttrib;
@@ -1057,7 +1063,7 @@ end;
 
 initialization
 begin
-  {$IFDEF WDC}
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
   //todo -cPractical: Move into class constructor
   TKMRenderUI.fClipXStack := TStack<TKMRangeInt>.Create;
   TKMRenderUI.fClipYStack := TStack<TKMRangeInt>.Create;
@@ -1067,7 +1073,7 @@ end;
 
 finalization
 begin
-  {$IFDEF WDC}
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: same nested clipping as Delphi
   TKMRenderUI.fClipXStack.Free;
   TKMRenderUI.fClipYStack.Free;
   {$ENDIF}

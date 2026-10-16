@@ -1699,7 +1699,7 @@ begin
       if (RemoveTrees  > 0) then Text := Format('%s%dx RemoveTrees ' ,[Text, RemoveTrees]);
       if (PlanPlaced   > 0) then Text := Format('%s%dx PlanPlaced '  ,[Text, PlanPlaced]);
       if (Construction > 0) then Text := Format('%s%dx Construction ',[Text, Construction]);
-      aBalanceText := Format( '%s %s (%s),', [aBalanceText, gRes.Houses[HT].HouseName, Text.SubString(0,Length(Text)-1)] );
+      aBalanceText := Format( '%s %s (%s),', [aBalanceText, gRes.Houses[HT].HouseName, Copy(Text, 1, Length(Text)-1)] );
     end;
   end;
   // Active nodes
@@ -1714,7 +1714,7 @@ begin
   if fWoodShortage  then Text := Text + ' Wood,';
   if fGoldShortage  then Text := Text + ' Gold,';
   if (Length(Text) > 0) then
-    aBalanceText := Format('%s|Shortage:%s%s[]',[aBalanceText,COLOR_RED,Text.SubString(0,Length(Text)-1)]);
+    aBalanceText := Format('%s|Shortage:%s%s[]',[aBalanceText,COLOR_RED,Copy(Text, 1, Length(Text)-1)]);
   {$IFDEF DEBUG_NewAI}
     aBalanceText := Format('%s|Time Plan Roads: %d',[aBalanceText,fTimePlanRoads]);
   {$ENDIF}

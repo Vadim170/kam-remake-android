@@ -425,7 +425,7 @@ var
   I: Integer;
 begin
   aSaveStream.PlaceMarker('VarValueList');
-  aSaveStream.Write(Count);
+  aSaveStream.Write(Integer(Count)); // FPC: generic Count is SizeInt (8 bytes), keep the 4-byte save format
   for I := 0 to Count - 1 do
     Items[I].Save(aSaveStream);
 end;

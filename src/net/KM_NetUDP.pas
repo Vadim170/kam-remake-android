@@ -3,6 +3,7 @@ unit KM_NetUDP;
 interface
 uses
   Classes, Math, SysUtils, KM_CommonClasses, KM_Defaults
+  {$IFDEF FPC} ,KM_CommonTypes {$ENDIF}
   {$IFDEF WDC} ,KM_NetUDPOverbyte {$ENDIF}
   {$IFDEF FPC} ,KM_NetUDPLNet {$ENDIF}
   ;

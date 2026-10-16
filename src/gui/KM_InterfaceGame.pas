@@ -4,7 +4,7 @@ interface
 uses
   {$IFDEF MSWindows} Windows, {$ENDIF}
   {$IFDEF FPC}
-  {$IFDEF Unix} LCLIntF, {$ENDIF}
+  {$IFDEF Unix} LCLIntf, {$ENDIF}
   {$ENDIF}
   SysUtils, Classes, Math, Controls,
   KM_Defaults,

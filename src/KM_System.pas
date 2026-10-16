@@ -90,6 +90,11 @@ const
   CURSOR_OFFSET_Y: array [TKMCursorImageType] of Integer = (0,9,10,18,20,44,13,0,-1,0,1,1, 1, 0,-1,0, 0 ,0 ,SH,SF,SF,SF,SH,0,28,0,0,28,0);
 
   CUSTOM_CUR_FILENAME: array[0..CUSTOM_CUR_CNT-1] of UnicodeString = ('cur1.ani');
+{$IFDEF ANDROID}
+begin
+  //Touch screen has no OS cursor. Screen.Cursor still keeps the current cursor kind for the game logic
+end;
+{$ELSE}
 var
   C: TKMCursorImageType;
   I, sx, sy, x, y: Integer;
@@ -193,6 +198,8 @@ begin
   end;
   {$ENDIF}
 end;
+{$ENDIF}
+
 
 
 procedure TKMSystem.FlashingStart;

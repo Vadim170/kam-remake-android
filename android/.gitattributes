@@ -1,0 +1,5 @@
+# Patches must be applied byte-exact (some patched sources use CRLF)
+*.patch -text
+# Shell scripts must keep LF on every platform
+*.sh text eol=lf
+gradlew text eol=lf

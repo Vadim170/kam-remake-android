@@ -105,9 +105,9 @@ var
   FEAT_VIDEOS_UNDER_WINE          :Boolean = False; // Enable videos under Wine
   FEAT_WARFARE_ORDER_PROPORTIONAL :Boolean = False; //New proportional approach (looks like a bad idea)
 
-  {$IFDEF WDC} //Work only in Delphi
+  {$IF DEFINED(WDC) OR DEFINED(FPC)} // FPC: needed for the same delivery logic and save format as in Delphi build
   CACHE_DELIVERY_BIDS: Boolean = True; //Cache delivery bids cost. Must be turned ON if we want to use pathfinding for bid calc, huge impact on performance in that case
-  {$ENDIF}
+  {$IFEND}
 
   //These are debug things, should be False
   {Runner}
@@ -823,6 +823,13 @@ type
     spObjectUID,
     spControlId);
 
+  {$IFDEF FPC}
+  // FPC 3.2.2 has no TProc<>
+  TKMStatusBarUpdateEvent = procedure (aPanelIndex: TKMStatusBarPanel; aText: string) of object;
+  {$ENDIF}
+
+
+
 type
   TKMMapSize = (msNone, msXS, msS, msM, msL, msXL, msXXL);
 
@@ -1096,9 +1103,33 @@ const
 var
   ExeDir: UnicodeString;
 
+{$IF DEFINED(FPC) AND NOT (DEFINED(CPUI386) OR DEFINED(CPUX86_64))}
+  // x87 control word does not exist on this CPU (e.g. aarch64).
+  // Emulate the part we rely on ($133F): all FP exceptions masked, round to nearest
+  procedure Set8087CW(aControlWord: Word);
+  function Get8087CW: Word;
+{$IFEND}
+
 implementation
 uses
+  {$IF DEFINED(FPC) AND NOT (DEFINED(CPUI386) OR DEFINED(CPUX86_64))} Math, {$IFEND}
   SysUtils;
+
+
+{$IF DEFINED(FPC) AND NOT (DEFINED(CPUI386) OR DEFINED(CPUX86_64))}
+procedure Set8087CW(aControlWord: Word);
+begin
+  SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
+  SetRoundMode(rmNearest);
+end;
+
+
+function Get8087CW: Word;
+begin
+  Result := $133F;
+end;
+{$IFEND}
+
 
 initialization
 begin

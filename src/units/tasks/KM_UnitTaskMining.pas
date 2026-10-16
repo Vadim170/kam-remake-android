@@ -4,7 +4,7 @@ interface
 uses
   Math, SysUtils,
   KM_CommonClasses, KM_Defaults, KM_Points,
-  KM_Units, KM_UnitWorkplan, KM_TerrainTypes,
+  KM_Units, KM_UnitWorkPlan, KM_TerrainTypes,
   KM_ResTypes;
 
 

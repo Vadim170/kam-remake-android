@@ -4,6 +4,7 @@ unit KM_NetServerLocator;
 interface
 uses
   Classes,
+  {$IFDEF FPC} KM_CommonTypes, {$ENDIF}
   KM_HTTPClient;
 
 type

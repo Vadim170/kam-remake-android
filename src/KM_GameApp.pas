@@ -32,7 +32,7 @@ type
 
     fChat: TKMChat;
 
-    fOnStatusBarUpdate: TProc<TKMStatusBarPanel, string>;
+    fOnStatusBarUpdate: {$IFDEF FPC}TKMStatusBarUpdateEvent{$ELSE}TProc<TKMStatusBarPanel, string>{$ENDIF};
     fOnGameSpeedChange: TSingleEvent;
     fOnGameStart: TKMGameModeChangeEvent;
     fOnGameEnd: TKMGameModeChangeEvent;
@@ -72,7 +72,7 @@ type
     procedure UpdatePerflog;
   public
     constructor Create(aRenderControl: TKMRenderControl; aScreenX, aScreenY: Word; aVSync: Boolean; aOnLoadingStep: TKMEvent;
-                       aOnLoadingText: TUnicodeStringEvent; aOnStatusBarUpdate: TProc<TKMStatusBarPanel, string>; NoMusic: Boolean = False);
+                       aOnLoadingText: TUnicodeStringEvent; aOnStatusBarUpdate: {$IFDEF FPC}TKMStatusBarUpdateEvent{$ELSE}TProc<TKMStatusBarPanel, string>{$ENDIF}; NoMusic: Boolean = False);
     destructor Destroy; override;
     procedure AfterConstruction(aReturnToOptions: Boolean); reintroduce;
 
@@ -183,7 +183,7 @@ uses
 { TKMGameApp }
 // Creating everything needed for MainMenu, game stuff is created on StartGame
 constructor TKMGameApp.Create(aRenderControl: TKMRenderControl; aScreenX, aScreenY: Word; aVSync: Boolean; aOnLoadingStep: TKMEvent;
-                              aOnLoadingText: TUnicodeStringEvent; aOnStatusBarUpdate: TProc<TKMStatusBarPanel, string>; NoMusic: Boolean = False);
+                              aOnLoadingText: TUnicodeStringEvent; aOnStatusBarUpdate: {$IFDEF FPC}TKMStatusBarUpdateEvent{$ELSE}TProc<TKMStatusBarPanel, string>{$ENDIF}; NoMusic: Boolean = False);
 begin
   inherited Create;
 
@@ -728,11 +728,12 @@ const
   SAVE_SUFFIX_DEBUG = '_dbg';
 var
   loadError: String;
+  savegamePath, replayPath: String;
 begin
   // Note that when strings (i.e. aSavegamePath, aReplayPath) come from the game they are passed by a reference,
   // hence when the game is destroyed the strings are killed too. Hence we MUST! make a local copy.
-  var savegamePath := aSavegamePath;
-  var replayPath := aReplayPath;
+  savegamePath := aSavegamePath;
+  replayPath := aReplayPath;
 
   InstantiateGame(aGameMode);
 
@@ -771,11 +772,12 @@ procedure TKMGameApp.InstantiateGameFromScript(const aMissionFullFilePath, aGame
                                         aDifficulty: TKMMissionDifficulty = mdNone; aAIType: TKMAIType = aitNone);
 var
   loadError: String;
+  missionFullFilePath, gameName: String;
 begin
   // Note that when strings (i.e. aMissionFullFilePath, aGameName) come from the game they are passed by a reference,
   // hence when the game is destroyed the strings are killed too. Hence we MUST! make a local copy.
-  var missionFullFilePath := aMissionFullFilePath;
-  var gameName := aGameName;
+  missionFullFilePath := aMissionFullFilePath;
+  gameName := aGameName;
 
   InstantiateGame(aGameMode);
 
@@ -1296,7 +1298,7 @@ begin
   Render(True);
   if aFilename = '' then
   begin
-    DateTimeToString(strDate, 'yyyy-mm-dd hh-nn-ss', Now); //2007-12-23 15-24-33
+    strDate := FormatDateTime('yyyy-mm-dd hh-nn-ss', Now); //2007-12-23 15-24-33
     fileName := ExeDir + 'screenshots\KaM Remake ' + strDate + '.jpeg';
   end
   else
@@ -1350,7 +1352,7 @@ begin
     // Render once is enough, since we render to an off-screen buffer (FBO)
     Render(True);
 
-    DateTimeToString(dateStr, 'yyyy-mm-dd hh-nn-ss', Now); //2007-12-23 15-24-33
+    dateStr := FormatDateTime('yyyy-mm-dd hh-nn-ss', Now); //2007-12-23 15-24-33
     fileName := ExeDir + 'screenshots\' + gGame.Params.Name + ' ' + dateStr + IMAGE_TYPE_EXT[aImageType];
 
     gRender.ReadRenderedToFBOPixels(w, h, pixelData);

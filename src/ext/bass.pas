@@ -15,11 +15,18 @@ unit Bass;
 
 interface
 
+{$IFDEF MSWINDOWS}
 uses
   Windows;
+{$ELSE}
+type
+  HWND = PtrUInt;
+  PGUID = ^TGUID;
+{$ENDIF}
 
 const
   BASSVERSION = $204;             // API version
+
   BASSVERSIONTEXT = '2.4';
 
   // Use these to test for error from functions that return a DWORD or QWORD
@@ -696,7 +703,8 @@ type
 
 // Functions
 const
-  bassdll = 'bass.dll';
+  bassdll = {$IFDEF ANDROID}'bass'{$ELSE}'bass.dll'{$ENDIF};
+
 
 function BASS_SetConfig(option, value: DWORD): BOOL; stdcall; external bassdll;
 function BASS_GetConfig(option: DWORD): DWORD; stdcall; external bassdll;

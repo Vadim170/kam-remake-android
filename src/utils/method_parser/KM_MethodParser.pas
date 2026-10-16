@@ -47,7 +47,7 @@ type
 
 implementation
 uses
-  SysUtils;
+  SysUtils, StrUtils;
 
 
 { TKMMethod }
@@ -155,11 +155,11 @@ begin
         Delete(s, splitPos, Length(s) - splitPos + 1);
       end;
 
-      if LowerCase(s).StartsWith('var ', True) then
+      if StartsText('var ', s) then
       begin
         paramFlag := pfVar;
         Delete(s, 1, 4);
-      end else if LowerCase(s).StartsWith('const ', True) then
+      end else if StartsText('const ', s) then
       begin
         paramFlag := pfConst;
         Delete(s, 1, 6);

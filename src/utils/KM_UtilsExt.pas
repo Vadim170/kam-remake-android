@@ -27,7 +27,7 @@ implementation
 uses
   SysUtils,
   KM_Defaults
-  {$IFDEF FPC} , LCLIntF, LCLType {$ENDIF}
+  {$IFDEF FPC} , LCLIntf, LCLType {$ENDIF}
   ;
 //  {$IFDEF FPC} FileUtil, {$ENDIF}
 //  {$IFDEF WDC} IOUtils {$ENDIF};

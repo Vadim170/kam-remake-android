@@ -96,6 +96,11 @@ type
     function AddOrFindChild(const aChildNodeName: string): TKMXmlNode;
     function HasAttribute(const AttrName: String): Boolean; {$IFDEF WDC}reintroduce;{$ENDIF}
     function HasChild(const Name: String): Boolean; {$IFDEF WDC}reintroduce;{$ENDIF}
+    {$IFDEF FPC}
+    // Xml.VerySimple-compatible API (TKMXmlNode is used as a hard-cast of TDOMElement, so no fields allowed here)
+    procedure SetAttribute(const AttrName: String; const AttrValue: TKMSimpleVariant); reintroduce;
+    procedure Clear;
+    {$ENDIF}
     property Attributes[const AttrName: String]: TKMSimpleVariant read GetAttrib write SetAttrib;
     property ChildsCount: Integer read GetChildsCount;
     property Childs[const aIndex: Integer]: TKMXmlNode read GetChild;
@@ -116,6 +121,9 @@ begin
   //todo -cPractical: This code works not as expected. Review and fix
   // On FPC this does not compile at all, since there's no TFormatSettings.Create(string) at all
   FDateFormat := TFormatSettings.Create('dd/mm/yyyy');
+  {$ENDIF}
+  {$IFDEF FPC}
+  FDateFormat := DefaultFormatSettings;
   {$ENDIF}
 end;
 
@@ -175,7 +183,19 @@ begin
     // When no file exists we create an empty XML and let caller handle it
     // e.g. by reading default values from it
     if FileExists(aFilename) then
-      ReadXMLFile(fDocument, aFilename);
+    begin
+      // ReadXMLFile creates a new document instance
+      FreeAndNil(fDocument);
+      fRoot := nil;
+      try
+        ReadXMLFile(fDocument, aFilename);
+      except
+        // Treat broken file as an empty one (same as missing file)
+        FreeAndNil(fDocument);
+      end;
+      if fDocument = nil then
+        fDocument := TKMXmlDomDocument.Create;
+    end;
   {$ENDIF}
 
   // Set document Version and Encoding again
@@ -190,11 +210,16 @@ begin
       fRoot := TKMXmlNode(fDocument.ChildNodes.Add(aRoot));
   {$ENDIF}
   {$IFDEF FPC}
-    fRoot := TKMXmlNode(fDocument.DocumentElement.FindNode(aRoot));
+    fRoot := nil;
+    if (fDocument.DocumentElement <> nil) and (fDocument.DocumentElement.NodeName = aRoot) then
+      fRoot := TKMXmlNode(fDocument.DocumentElement);
 
     // Create root if it's missing, so that XML could be processed and default parameters created
     if fRoot = nil then
     begin
+      // XML document can have only one root element
+      if fDocument.DocumentElement <> nil then
+        fDocument.RemoveChild(fDocument.DocumentElement).Free;
       fRoot := TKMXmlNode(fDocument.CreateElement(aRoot));
       fDocument.AppendChild(fRoot);
     end;
@@ -216,23 +241,53 @@ end;
 
 
 function TKMXmlDocument.GetText: String;
+{$IFDEF FPC}
+var
+  ss: TStringStream;
+{$ENDIF}
 begin
   {$IFDEF WDC}
   Result := fDocument.Xml;
   {$ENDIF}
   {$IFDEF FPC}
-  // Not implemented
+  ss := TStringStream.Create('');
+  try
+    WriteXMLFile(fDocument, ss);
+    Result := ss.DataString;
+  finally
+    ss.Free;
+  end;
   {$ENDIF}
 end;
 
 
 procedure TKMXmlDocument.SetText(const aText: string);
+{$IFDEF FPC}
+var
+  ss: TStringStream;
+  rootName: string;
+{$ENDIF}
 begin
   {$IFDEF WDC}
   fDocument.Xml := aText;
   {$ENDIF}
   {$IFDEF FPC}
-  // Not implemented
+  if fRoot <> nil then
+    rootName := fRoot.NodeName
+  else
+    rootName := 'Root';
+
+  ss := TStringStream.Create(aText);
+  try
+    FreeAndNil(fDocument);
+    fRoot := nil;
+    ReadXMLFile(fDocument, ss);
+  finally
+    ss.Free;
+  end;
+
+  if (fDocument.DocumentElement <> nil) and (fDocument.DocumentElement.NodeName = rootName) then
+    fRoot := TKMXmlNode(fDocument.DocumentElement);
   {$ENDIF}
 end;
 
@@ -243,15 +298,52 @@ begin
   {$IFDEF WDC}
   Result := TKMXmlNode(inherited AddChild(Name));
   {$ENDIF}
+  {$IFDEF FPC}
+  Result := TKMXmlNode(OwnerDocument.CreateElement(Name));
+  AppendChild(Result);
+  {$ENDIF}
 end;
 
 
 function TKMXmlNode.FindNode(const Name: String): TKMXmlNode;
+{$IFDEF FPC}
+var
+  node: TDOMNode;
+{$ENDIF}
 begin
   {$IFDEF WDC}
   Result := TKMXmlNode(ChildNodes.Find(Name));
   {$ENDIF}
+  {$IFDEF FPC}
+  // First child element with matching name (case-sensitive, same as Xml.VerySimple with default options)
+  Result := nil;
+  node := FirstChild;
+  while node <> nil do
+  begin
+    if (node.NodeType = ELEMENT_NODE) and (node.NodeName = Name) then
+      Exit(TKMXmlNode(node));
+    node := node.NextSibling;
+  end;
+  {$ENDIF}
 end;
+
+
+{$IFDEF FPC}
+procedure TKMXmlNode.SetAttribute(const AttrName: String; const AttrValue: TKMSimpleVariant);
+begin
+  SetAttrib(AttrName, AttrValue);
+end;
+
+
+procedure TKMXmlNode.Clear;
+begin
+  // Remove all child nodes and attributes
+  while FirstChild <> nil do
+    RemoveChild(FirstChild).Free;
+  while (TDOMElement(Self).Attributes <> nil) and (TDOMElement(Self).Attributes.Length > 0) do
+    TDOMElement(Self).RemoveAttributeNode(TDOMAttr(TDOMElement(Self).Attributes[0])).Free;
+end;
+{$ENDIF}
 
 
 function TKMXmlNode.AddOrFindChild(const aChildNodeName: string): TKMXmlNode;
@@ -269,6 +361,9 @@ begin
   {$IFDEF WDC}
   Result := inherited HasAttribute(AttrName);
   {$ENDIF}
+  {$IFDEF FPC}
+  Result := TDOMElement(Self).hasAttribute(AttrName);
+  {$ENDIF}
 end;
 
 
@@ -276,6 +371,9 @@ function TKMXmlNode.HasChild(const Name: String): Boolean;
 begin
   {$IFDEF WDC}
   Result := inherited HasChild(Name);
+  {$ENDIF}
+  {$IFDEF FPC}
+  Result := FindNode(Name) <> nil;
   {$ENDIF}
 end;
 
@@ -290,6 +388,10 @@ begin
   sv := inherited GetAttr(AttrName);
   Result.fValue := sv.AsString;
   {$ENDIF}
+  {$IFDEF FPC}
+  // Returns '' for missing attributes, same as Xml.VerySimple
+  Result.fValue := TDOMElement(Self).GetAttribute(AttrName);
+  {$ENDIF}
 end;
 
 
@@ -298,21 +400,59 @@ begin
   {$IFDEF WDC}
   inherited SetAttr(AttrName, AttrValue.ToSimpleVariant);
   {$ENDIF}
+  {$IFDEF FPC}
+  TDOMElement(Self).SetAttribute(AttrName, AttrValue.fValue);
+  {$ENDIF}
 end;
 
 
 function TKMXmlNode.GetChildsCount: Integer;
+{$IFDEF FPC}
+var
+  node: TDOMNode;
+{$ENDIF}
 begin
   {$IFDEF WDC}
   Result := ChildNodes.Count;
+  {$ENDIF}
+  {$IFDEF FPC}
+  // Count element nodes only (whitespace text nodes could appear after parsing)
+  Result := 0;
+  node := FirstChild;
+  while node <> nil do
+  begin
+    if node.NodeType = ELEMENT_NODE then
+      Inc(Result);
+    node := node.NextSibling;
+  end;
   {$ENDIF}
 end;
 
 
 function TKMXmlNode.GetChild(const aIndex: Integer): TKMXmlNode;
+{$IFDEF FPC}
+var
+  node: TDOMNode;
+  idx: Integer;
+{$ENDIF}
 begin
   {$IFDEF WDC}
   Result := TKMXmlNode(ChildNodes[aIndex]);
+  {$ENDIF}
+  {$IFDEF FPC}
+  Result := nil;
+  idx := 0;
+  node := FirstChild;
+  while node <> nil do
+  begin
+    if node.NodeType = ELEMENT_NODE then
+    begin
+      if idx = aIndex then
+        Exit(TKMXmlNode(node));
+      Inc(idx);
+    end;
+    node := node.NextSibling;
+  end;
   {$ENDIF}
 end;
 
@@ -434,7 +574,11 @@ begin
   {$IFDEF WDC}
   fs := TFormatSettings.Create;
   {$ENDIF}
+  {$IFDEF FPC}
+  fs := DefaultFormatSettings;
+  {$ENDIF}
   fs.DecimalSeparator := '.';
+
 
   str := FormatFloat('0.0000', A, fs);
 

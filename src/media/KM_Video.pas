@@ -3,15 +3,28 @@ unit KM_Video;
 interface
 uses
   SysUtils, SyncObjs, Types, Classes,
-  Messages, Generics.Collections,
+  {$IFDEF MSWindows} Messages, {$ENDIF} Generics.Collections,
   KromOGLUtils
   {$IFDEF WDC} , UITypes {$ENDIF}
   {$IFDEF FPC} , Controls {$ENDIF}
   {$IFDEF VIDEOS} , KM_VLC {$ENDIF}
   ;
 
+// Android: videos are played by the host (libVLC in Java), this unit keeps the queue and game-side logic
+{$IFDEF ANDROID}
+  {$DEFINE VIDEOS_HOST}
+{$ENDIF}
+{$IF DEFINED(VIDEOS) OR DEFINED(VIDEOS_HOST)}
+  {$DEFINE VIDEOS_QUEUE}
+{$IFEND}
+
 type
+  {$IFDEF FPC}
+  TKMVideoPlayerCallback = procedure of object;
+  {$ELSE}
   TKMVideoPlayerCallback = reference to procedure;
+  {$ENDIF}
+
 
   TKMVideoFileKind = (
     vfkNone,
@@ -29,7 +42,18 @@ type
     VIDEOFILE_PATH = 'data' + PathDelim + 'gfx' + PathDelim + 'video' + PathDelim;
   {$ENDIF}
   private
+
     fPlayerEnabled: Boolean;
+  {$IFDEF VIDEOS_HOST}
+    fIndex: Integer;
+    fCallback: TKMVideoPlayerCallback;
+    fBrightness: Integer;
+    fVideoList: TList<TKMVideoFile>;
+    fHostPlaying: Boolean;
+
+    function TryGetPathFile(const aPathRelative: string; var aFileName: string): Boolean;
+    procedure AddVideoToList(aPath: string; aKind: TKMVideoFileKind = vfkNone);
+  {$ENDIF}
   {$IFDEF VIDEOS}
     fCriticalSection: TCriticalSection;
 
@@ -90,6 +114,9 @@ type
 
     function IsActive: Boolean;
     function IsPlay: Boolean;
+    {$IFDEF VIDEOS_HOST}
+    procedure HostVideoFinished; // Called when the host player finished or was skipped
+    {$ENDIF}
   end;
 
 var
@@ -97,12 +124,19 @@ var
 
 implementation
 uses
-  System.Math,
+  Math,
   dglOpenGL,
   KM_Render, KM_RenderTypes, KM_RenderUI, KM_ResLocales,
   KM_GameApp, KM_GameSettings,
   KM_Music, KM_Sound,
+  {$IFDEF ANDROID} KMAndroidHost, {$ENDIF}
+
   KM_Defaults;
+
+{$IFDEF VIDEOS_HOST}
+const
+  VIDEOFILE_PATH = 'data' + PathDelim + 'gfx' + PathDelim + 'video' + PathDelim;
+{$ENDIF}
 
 const
   FADE_MUSIC_TIME   = 500; // Music fade time, in ms
@@ -136,6 +170,11 @@ begin
 
   if not fPlayerEnabled then Exit;
 
+{$IFDEF VIDEOS_HOST}
+  fIndex := 0;
+  fCallback := nil;
+  fVideoList := TList<TKMVideoFile>.Create;
+{$ENDIF}
 {$IFDEF VIDEOS}
   fIndex := 0;
   fTexture.U := 1;
@@ -154,6 +193,9 @@ destructor TKMVideoPlayer.Destroy;
 begin
   if fPlayerEnabled then
   begin
+    {$IFDEF VIDEOS_HOST}
+    fVideoList.Free;
+    {$ENDIF}
     {$IFDEF VIDEOS}
     if Assigned(fMediaPlayer) then
       libvlc_media_player_stop(fMediaPlayer); //Stop VLC
@@ -177,7 +219,7 @@ begin
 end;
 
 
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
 procedure TKMVideoPlayer.AddVideoToList(aPath: string; aKind: TKMVideoFileKind = vfkNone);
 var
   videoFileData: TKMVideoFile;
@@ -193,14 +235,14 @@ end;
 
 
 procedure TKMVideoPlayer.AddCampaignVideo(const aCampaignPath, aVideoName: string);
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
 var
   path: string;
 {$ENDIF}
 begin
   if Self = nil then Exit;
   if not fPlayerEnabled then Exit;
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
   if not gGameSettings.Video.Enabled then Exit;
 
   if TryGetPathFile(ExtractRelativePath(ExeDir, aCampaignPath) + aVideoName, path)
@@ -211,7 +253,7 @@ end;
 
 
 procedure TKMVideoPlayer.AddMissionVideo(const aMissionFile, aVideoName: string);
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
 var
   missionPath, fileName: string;
   path: string;
@@ -219,7 +261,7 @@ var
 begin
   if Self = nil then Exit;
   if not fPlayerEnabled then Exit;
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
   if not gGameSettings.Video.Enabled then Exit;
 
   missionPath := ExtractFilePath(aMissionFile);
@@ -234,14 +276,14 @@ end;
 
 
 procedure TKMVideoPlayer.AddVideo(const aVideoName: String; aKind: TKMVideoFileKind = vfkNone);
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
 var
   path: string;
 {$ENDIF}
 begin
   if Self = nil then Exit;
   if not fPlayerEnabled then Exit;
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
   if not gGameSettings.Video.Enabled then Exit;
 
   if TryGetPathFile(aVideoName, path)
@@ -432,10 +474,14 @@ function TKMVideoPlayer.IsActive: Boolean;
 begin
   if Self = nil then Exit(False);
   if not fPlayerEnabled then Exit(False);
+{$IFDEF VIDEOS_HOST}
+  Result := fHostPlaying or (fVideoList.Count > 0);
+{$ELSE}
 {$IFDEF VIDEOS}
   Result := Assigned(fMediaPlayer) or (fVideoList.Count > 0);
 {$else}
   Result := False;
+{$ENDIF}
 {$ENDIF}
 end;
 
@@ -444,10 +490,14 @@ function TKMVideoPlayer.IsPlay: Boolean;
 begin
   if Self = nil then Exit(False);
   if not fPlayerEnabled then Exit(False);
+{$IFDEF VIDEOS_HOST}
+  Result := fHostPlaying;
+{$ELSE}
 {$IFDEF VIDEOS}
   Result := GetState in [vlcpsPlaying, vlcpsPaused, vlcpsBuffering];
 {$else}
   Result := False;
+{$ENDIF}
 {$ENDIF}
 end;
 
@@ -465,6 +515,26 @@ var
 begin
   if Self = nil then Exit;
   if not fPlayerEnabled then Exit;
+{$IFDEF VIDEOS_HOST}
+  if fIndex >= fVideoList.Count then Exit;
+  if Assigned(gGameApp) then
+  begin
+    gSoundPlayer.AbortAllFadeSounds;
+    gSoundPlayer.AbortAllScriptSounds;
+    gSoundPlayer.AbortAllLongSounds;
+    gMusic.StopPlayingOtherFile;
+    if fVideoList[fIndex].Kind = vfkStarting then
+      gMusic.Fade(0)
+    else
+      gMusic.Fade(FADE_MUSIC_TIME);
+  end;
+  fBrightness := gGameSettings.GFX.Brightness;
+  fHostPlaying := True;
+  if Assigned(gHostPlayVideo) then
+    gHostPlayVideo(UnicodeString(fVideoList[fIndex].Path), Round(gGameSettings.Video.VideoVolume * 100), gGameSettings.Video.VideoStretch)
+  else
+    HostVideoFinished;
+{$ENDIF}
 {$IFDEF VIDEOS}
   if fIndex >= fVideoList.Count then Exit;
 
@@ -581,11 +651,48 @@ end;
 
 
 procedure TKMVideoPlayer.Stop;
-{$IFDEF VIDEOS}
+{$IF DEFINED(VIDEOS) OR DEFINED(VIDEOS_HOST)}
 var
   startingVideo: Boolean;
-{$ENDIF}
+{$IFEND}
 begin
+{$IFDEF VIDEOS_HOST}
+  if Self = nil then Exit;
+  if not fPlayerEnabled then Exit;
+  if fVideoList.Count = 0 then Exit;
+
+  if fHostPlaying then
+  begin
+    fHostPlaying := False;
+    if Assigned(gHostStopVideo) then
+      gHostStopVideo;
+  end;
+
+  startingVideo := ( fVideoList[fIndex].Kind = vfkStarting );
+
+  Inc(fIndex);
+  if fIndex >= fVideoList.Count then
+  begin
+    fIndex := 0;
+    fVideoList.Clear;
+
+    if Assigned(gGameApp) then
+    begin
+      if startingVideo then
+        gMusic.UnfadeStarting
+      else
+        gMusic.Unfade(UNFADE_MUSIC_TIME);
+    end;
+
+    if Assigned(fCallback) then
+    begin
+      fCallback;
+      fCallback := nil;
+    end;
+  end
+  else
+    Play;
+{$ENDIF}
 {$IFDEF VIDEOS}
   if Self = nil then Exit;
   if not fPlayerEnabled then Exit;
@@ -621,6 +728,18 @@ begin
 end;
 
 
+{$IFDEF VIDEOS_HOST}
+procedure TKMVideoPlayer.HostVideoFinished;
+begin
+  if Self = nil then Exit;
+  if not fHostPlaying then Exit;
+
+  fHostPlaying := False;
+  Stop;
+end;
+{$ENDIF}
+
+
 procedure TKMVideoPlayer.MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
 begin
   if Self = nil then Exit;
@@ -634,7 +753,7 @@ begin
 end;
 
 
-{$IFDEF VIDEOS}
+{$IFDEF VIDEOS_QUEUE}
 function TKMVideoPlayer.TryGetPathFile(const aPathRelative: string; var aFileName: string): Boolean;
 var
   I: Integer;
@@ -663,7 +782,7 @@ begin
     fileName := ExtractFileName(aPathRelative);
     for I := 0 to localePostfixes.Count - 1 do
     begin
-      if FindFirst(path + '*', faAnyFile, searchRec) = 0 then
+      if FindFirst({$IFDEF ANDROID}ExeDir + {$ENDIF}path + '*', faAnyFile, searchRec) = 0 then
       try
         repeat
           if (searchRec.Name = '.') or (searchRec.Name = '..') then
@@ -672,7 +791,7 @@ begin
           f := fileName + localePostfixes[I] + ExtractFileExt(searchRec.Name);
           if CompareStr(searchRec.Name, f) = 0 then
           begin
-            aFileName := ExtractFilePath(ParamStr(0)) + path + searchRec.Name;
+            aFileName := {$IFDEF ANDROID}ExeDir{$ELSE}ExtractFilePath(ParamStr(0)){$ENDIF} + path + searchRec.Name;
             Exit(True);
           end;
 
@@ -687,6 +806,9 @@ begin
 end;
 
 
+{$ENDIF}
+
+{$IFDEF VIDEOS}
 procedure TKMVideoPlayer.SetTrackByLocale;
 const
   TIME_STEP = 50;

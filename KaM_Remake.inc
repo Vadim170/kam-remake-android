@@ -24,7 +24,12 @@
 // Lazarus compiler specific settings
 {$IFDEF FPC}
   // Set FPC to work in Delphi mode
-  {$MODE Delphi}
+  {$IFDEF ANDROID}
+    // Android port: string = UnicodeString, same as in Delphi (scripting, saves and UI code rely on that)
+    {$MODE DelphiUnicode}
+  {$ELSE}
+    {$MODE Delphi}
+  {$ENDIF}
   // Allow advanced records in Lazarus
   {$modeSwitch advancedRecords}
 
@@ -34,7 +39,13 @@
   {$IFDEF FPC_UNICODESTRINGS}
     {$DEFINE UNICODE}
   {$ENDIF}
+
+  // FPC 3.2.2 aarch64 node CSE (enabled by -O2) generates invalid code (mixes 32/64-bit registers)
+  {$IFDEF CPUAARCH64}
+    {$OPTIMIZATION NOCSE}
+  {$ENDIF}
 {$ENDIF} 
+
 
 
 // Delphi compiler specific settings

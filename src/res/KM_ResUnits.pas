@@ -3,8 +3,10 @@ unit KM_ResUnits;
 interface
 uses
   Classes, SysUtils,
+  {$IFDEF FPC} KM_FpcCompat, {$ENDIF}
   KM_CommonClasses, KM_CommonTypes, KM_Defaults, KM_Points,
   KM_ResTypes;
+
 
 
 type

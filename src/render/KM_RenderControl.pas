@@ -3,10 +3,14 @@ unit KM_RenderControl;
 interface
 uses
   Classes, Types,
-  ExtCtrls, Forms,
+  {$IFNDEF ANDROID} ExtCtrls, Forms, {$ENDIF}
+  {$IFDEF ANDROID} Controls, KMAndroidHost, {$ENDIF}
+
   KromOGLUtils
   {$IFDEF MSWindows} , Windows, dglOpenGL  {$ENDIF}
+  {$IFDEF ANDROID} , dglOpenGL {$ELSE}
   {$IFDEF Unix} , OpenGLContext, dglOpenGL {$ENDIF}
+  {$ENDIF}
   {$IFDEF WDC}, Messages {$ENDIF}
   ;
 
@@ -17,9 +21,14 @@ type
     //Custom flicker-free Panel
     TKMRenderControl = class(TPanel)
   {$ENDIF}
+  {$IFDEF ANDROID}
+    //GL context and surface are owned by the Android GLSurfaceView
+    TKMRenderControl = class(TWinControl)
+  {$ELSE}
   {$IFDEF Unix}
     //TOpenGLControl is already flicker-free and supports multiple window managers
     TKMRenderControl = class(TOpenGLControl)
+  {$ENDIF}
   {$ENDIF}
   private
     {$IFDEF MSWindows}
@@ -31,11 +40,15 @@ type
       procedure WMSize(var Message: TWMSize); message WM_SIZE;
       procedure WMPaint(var Message: TWMPaint); message WM_PAINT;
     {$ENDIF}
+    {$IFNDEF ANDROID}
     {$IFDEF Unix}
       procedure DoOnResize; override;
     {$ENDIF}
+    {$ENDIF}
+  {$IFNDEF ANDROID}
   published
     property OnMouseWheel; //Required for Lazarus
+  {$ENDIF}
   public
     OnRender: TNotifyEvent;
     OnResize: TKMResizeEvent;
@@ -43,6 +56,10 @@ type
     procedure DestroyRenderContext;
     {$IFDEF MSWindows}
       procedure SwapBuffers; //Already exists in TOpenGLControl for Unix
+    {$ENDIF}
+    {$IFDEF ANDROID}
+      procedure SwapBuffers; //Buffers are swapped by GLSurfaceView after each frame
+      procedure SetSize(aWidth, aHeight: Integer);
     {$ENDIF}
   end;
 
@@ -102,6 +119,20 @@ implementation
 {$ENDIF}
 
 
+{$IFDEF ANDROID}
+  procedure TKMRenderControl.SwapBuffers;
+  begin
+  end;
+
+
+  procedure TKMRenderControl.SetSize(aWidth, aHeight: Integer);
+  begin
+    Width := aWidth;
+    Height := aHeight;
+    if Assigned(OnResize) then
+      OnResize(Width, Height);
+  end;
+{$ELSE}
 {$IFDEF Unix}
   procedure TKMRenderControl.DoOnResize;
   begin
@@ -109,6 +140,7 @@ implementation
     if Assigned(OnResize) then
       OnResize(Width, Height);
   end;
+{$ENDIF}
 {$ENDIF}
 
 
@@ -119,11 +151,20 @@ begin
     //Let us use glPrint to output OGL text
     BuildFont(h_DC, 14, FW_SEMIBOLD);
   {$ENDIF}
+  {$IFDEF ANDROID}
+    //Context is already current on the GL thread, gl4es provides desktop GL entry points
+    InitOpenGL;
+    ReadExtensions;
+    ReadImplementationProperties;
+    if Assigned(gOnGLInitialized) then
+      gOnGLInitialized;
+  {$ELSE}
   {$IFDEF Unix}
     MakeCurrent;
     InitOpenGL;
     ReadExtensions;
     ReadImplementationProperties;
+  {$ENDIF}
   {$ENDIF}
 end;
 

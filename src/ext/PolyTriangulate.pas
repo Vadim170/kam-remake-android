@@ -4,6 +4,8 @@
 //Refactoring by Krom Stern 2012
 //
 unit PolyTriangulate;
+// FPC 3.2.2 aarch64 node CSE (enabled by -O2) generates invalid code
+{$IFDEF CPUAARCH64}{$OPTIMIZATION NOCSE}{$ENDIF}
 interface
 uses KM_Points, Math;
 

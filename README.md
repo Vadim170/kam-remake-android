@@ -1,3 +1,5 @@
+> **Android port:** this fork adds a native arm64 Android build of KaM Remake — see [android/README.md](android/README.md).
+
 # KaM Remake project
 
 

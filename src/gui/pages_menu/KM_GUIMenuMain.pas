@@ -62,6 +62,15 @@ begin
       Button_MM_Options      := TKMButton.Create(Panel_MMButtons,0,160,350,30,gResTexts[TX_MENU_OPTIONS],bsMenu);
       Button_MM_Credits      := TKMButton.Create(Panel_MMButtons,0,200,350,30,gResTexts[TX_MENU_CREDITS],bsMenu);
       Button_MM_Quit         := TKMButton.Create(Panel_MMButtons,0,290,350,30,gResTexts[TX_MENU_QUIT],bsMenu);
+      {$IFDEF NO_MULTIPLAYER_UI}
+      // Build without multiplayer: hide the button and close the gap
+      Button_MM_MultiPlayer.Hide;
+      Button_MM_MapEd.Top   := Button_MM_MapEd.Top - 40;
+      Button_MM_Replays.Top := Button_MM_Replays.Top - 40;
+      Button_MM_Options.Top := Button_MM_Options.Top - 40;
+      Button_MM_Credits.Top := Button_MM_Credits.Top - 40;
+      {$ENDIF}
+
       Button_MM_SinglePlayer.OnClick := ButtonClick;
       Button_MM_MultiPlayer.OnClick  := ButtonClick;
       Button_MM_MapEd.OnClick        := ButtonClick;

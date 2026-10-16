@@ -2,7 +2,8 @@ unit KM_HandLogistics;
 {$I KaM_Remake.inc}
 interface
 uses
-  {$IF Defined(FPC) or Defined(VER230)}
+  // FPC: bid cache (USE_HASH) is required for the same delivery logic as in Delphi build
+  {$IF Defined(VER230)}
   {$ELSE}
     {$DEFINE USE_HASH}
   {$IFEND}
@@ -10,9 +11,9 @@ uses
   {$IFDEF USE_VIRTUAL_TREEVIEW}VirtualTrees, {$ENDIF}
 
   {$IFDEF USE_HASH}
-  System.Generics.Collections, System.Generics.Defaults, System.Hash,
+  Generics.Collections, Generics.Defaults, {$IFDEF FPC} Generics.Hashes, {$ELSE} System.Hash, {$ENDIF}
   {$ENDIF}
-  System.Math,
+  Math,
   KM_Units, KM_Houses,
   KM_HandEntity, KM_HandTypes,
   KM_CommonClasses, KM_Defaults, KM_Points,
@@ -117,13 +118,13 @@ type
 
   //Custom key comparator. Probably TDictionary can handle it himself, but lets try our custom comparator
   TKMDeliveryRouteBidKeyEqualityComparer = class(TEqualityComparer<TKMDeliveryRouteBidKey>)
-    function Equals(const Left, Right: TKMDeliveryRouteBidKey): Boolean; override;
-    function GetHashCode(const Value: TKMDeliveryRouteBidKey): Integer; override;
+    function Equals({$IFDEF FPC}constref{$ELSE}const{$ENDIF} Left, Right: TKMDeliveryRouteBidKey): Boolean; override;
+    function GetHashCode({$IFDEF FPC}constref{$ELSE}const{$ENDIF} Value: TKMDeliveryRouteBidKey): {$IFDEF FPC}UInt32{$ELSE}Integer{$ENDIF}; override;
   end;
 
   //Comparer just to make some order by keys
   TKMDeliveryRouteBidKeyComparer = class(TComparer<TKMDeliveryRouteBidKey>)
-    function Compare(const Left, Right: TKMDeliveryRouteBidKey): Integer; override;
+    function Compare({$IFDEF FPC}constref{$ELSE}const{$ENDIF} Left, Right: TKMDeliveryRouteBidKey): Integer; override;
   end;
 
   TKMDeliveryRouteBid = record
@@ -362,7 +363,7 @@ const
 
 implementation
 uses
-  System.Classes, System.SysUtils, System.TypInfo,
+  Classes, SysUtils, TypInfo,
   KM_Entity,
   KM_Terrain,
   KM_FormLogistics, KM_UnitTaskDelivery,
@@ -2601,7 +2602,7 @@ end;
 
 {$IFDEF USE_HASH}
 { TKMDeliveryRouteBidKeyEqualityComparer }
-function TKMDeliveryRouteBidKeyEqualityComparer.Equals(const Left, Right: TKMDeliveryRouteBidKey): Boolean;
+function TKMDeliveryRouteBidKeyEqualityComparer.Equals({$IFDEF FPC}constref{$ELSE}const{$ENDIF} Left, Right: TKMDeliveryRouteBidKey): Boolean;
 begin
   // path keys are equal if they have same ends
   Result := ((Left.FromP = Right.FromP) and (Left.ToP = Right.ToP))
@@ -2630,14 +2631,14 @@ end;
 // Hash function should be match to equals function, so
 // if A equals B, then Hash(A) = Hash(B)
 // For our task we need that From / To end could be swapped, since we don't care where is the starting point of the path
-function TKMDeliveryRouteBidKeyEqualityComparer.GetHashCode(const Value: TKMDeliveryRouteBidKey): Integer;
+function TKMDeliveryRouteBidKeyEqualityComparer.GetHashCode({$IFDEF FPC}constref{$ELSE}const{$ENDIF} Value: TKMDeliveryRouteBidKey): {$IFDEF FPC}UInt32{$ELSE}Integer{$ENDIF};
 begin
-  Result := Value.GetHashCode;
+  Result := {$IFDEF FPC}UInt32{$ENDIF}(Value.GetHashCode);
 end;
 
 
 //Compare keys to make some order to make save consistent. We don't care about the order, it just should be consistent
-function TKMDeliveryRouteBidKeyComparer.Compare(const Left, Right: TKMDeliveryRouteBidKey): Integer;
+function TKMDeliveryRouteBidKeyComparer.Compare({$IFDEF FPC}constref{$ELSE}const{$ENDIF} Left, Right: TKMDeliveryRouteBidKey): Integer;
 begin
   if Left.Pass = Right.Pass then
   begin
@@ -2721,7 +2722,12 @@ begin
   Int64Rec(total).Words[3] := (Byte(Pass) shl 8)          // (0..13 actually)
                               or Abs(FromP.Y - ToP.Y); // (0..256)
   //GetHashValue(Integer/Cardinal) is even faster, but we can't fit our 34 bits there
+  {$IFDEF FPC}
+  Result := DelphiHashLittle(@total, SizeOf(Int64), 0);
+  {$ELSE}
   Result := THashBobJenkins.GetHashValue(total, SizeOf(Int64), 0);
+  {$ENDIF}
+
 end;
 
 
@@ -2887,7 +2893,11 @@ procedure TKMDeliveryRouteEvaluator.Save(SaveStream: TKMemoryStream);
 var
   cacheKeyArray : TArray<TKMDeliveryRouteBidKey>;
   key: TKMDeliveryRouteBidKey;
+  {$IFDEF FPC}
+  comparer: IComparer<TKMDeliveryRouteBidKey>;
+  {$ELSE}
   comparer: TKMDeliveryRouteBidKeyComparer;
+  {$ENDIF}
   bid: TKMDeliveryRouteBid;
 {$ENDIF}
 begin
@@ -2900,14 +2910,18 @@ begin
   CleanCache; // Don't save expired cache records
   SaveStream.PlaceMarker('DeliveryRouteEvaluator');
   SaveStream.Write(fUpdatesCnt);
-  SaveStream.Write(fBidsRoutesCache.Count);
+  SaveStream.Write(Integer(fBidsRoutesCache.Count)); // FPC: generic Count is SizeInt (8 bytes), keep the 4-byte save format
 
   if fBidsRoutesCache.Count > 0 then
   begin
     comparer := TKMDeliveryRouteBidKeyComparer.Create;
     try
       cacheKeyArray := fBidsRoutesCache.Keys.ToArray;
+      {$IFDEF FPC}
+      TArrayHelper<TKMDeliveryRouteBidKey>.Sort(cacheKeyArray, comparer);
+      {$ELSE}
       TArray.Sort<TKMDeliveryRouteBidKey>(cacheKeyArray, comparer);
+      {$ENDIF}
 
       for key in cacheKeyArray do
       begin
@@ -2922,7 +2936,9 @@ begin
         SaveStream.Write(bid.CreatedAt);
       end;
     finally
+      {$IFNDEF FPC}
       comparer.Free;
+      {$ENDIF}
     end;
   end;
   {$ENDIF}

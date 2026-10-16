@@ -2,7 +2,7 @@ unit KM_NetServerLNet;
 {$I KaM_Remake.inc}
 interface
 uses
-  Classes, SysUtils, lNet;
+  Classes, SysUtils, lNet, KM_CommonTypes;
 
 
 { This unit knows nothing about KaM, it's just a puppet in hands of KM_ServerControl,
@@ -41,7 +41,7 @@ type
     procedure ClientDisconnect(aSocket: TLSocket);
     procedure ReceiveData(aSocket: TLSocket);
     procedure CanSend(aSocket: TLSocket);
-    procedure HandleError(const aMsg: string; aSocket: TLSocket);
+    procedure HandleError(const aMsg: AnsiString; aSocket: TLSocket);
     function GetMaxHandle: SmallInt;
   public
     constructor Create;
@@ -214,7 +214,7 @@ begin
 end;
 
 
-procedure TKMNetServerLNet.HandleError(const aMsg: string; aSocket: TLSocket);
+procedure TKMNetServerLNet.HandleError(const aMsg: AnsiString; aSocket: TLSocket);
 begin
   fOnError('LNet: ' + aMsg);
   if (aSocket <> nil) and not aSocket.Connected then

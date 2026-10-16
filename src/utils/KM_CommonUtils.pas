@@ -474,13 +474,41 @@ end;
 //This unit must not know about KromUtils because it is used by the Linux Dedicated servers
 //and KromUtils is not Linux compatible. Therefore this function is copied directly from KromUtils.
 //Do not remove and add KromUtils to uses, that would cause the Linux build to fail
+{$IFDEF ANDROID}
+type
+  TKMTimeSpec = record
+    tv_sec: Int64;
+    tv_nsec: Int64;
+  end;
+
+const
+  CLOCK_MONOTONIC = 1;
+
+function clock_gettime(aClockId: Integer; aTimeSpec: Pointer): Integer; cdecl; external 'c' name 'clock_gettime';
+
+
+// Monotonic time in microseconds (not affected by wall-clock changes)
+function MonotonicUsec: Int64;
+var
+  ts: TKMTimeSpec;
+begin
+  clock_gettime(CLOCK_MONOTONIC, @ts);
+  Result := ts.tv_sec * 1000000 + ts.tv_nsec div 1000;
+end;
+{$ENDIF}
+
+
 function TimeGet: Cardinal;
 begin
   {$IFDEF MSWindows}
   Result := TimeGetTime; //Return milliseconds with ~1ms precision
   {$ENDIF}
   {$IFDEF Unix}
-  Result := Cardinal(Trunc(Now * 24 * 60 * 60 * 1000) mod high(Cardinal));
+    {$IFDEF ANDROID}
+    Result := Cardinal((MonotonicUsec div 1000) mod High(Cardinal));
+    {$ELSE}
+    Result := Cardinal(Trunc(Now * 24 * 60 * 60 * 1000) mod high(Cardinal));
+    {$ENDIF}
   {$ENDIF}
 end;
 
@@ -492,8 +520,12 @@ var
   factor: Double;
 begin
   {$IFDEF FPC}
-  //Stub for now
-  Result := Int64(Trunc(Now * 24 * 60 * 60 * 1000000) mod High(Int64));
+    {$IFDEF ANDROID}
+    Result := MonotonicUsec;
+    {$ELSE}
+    //Stub for now
+    Result := Int64(Trunc(Now * 24 * 60 * 60 * 1000000) mod High(Int64));
+    {$ENDIF}
   {$ENDIF}
   {$IFDEF WDC}
   QueryPerformanceFrequency(freq);

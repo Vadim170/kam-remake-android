@@ -103,3 +103,7 @@ Modding graphics/*.txt
 KaM_Remake_exe.aqt
 
 SavesCMP/
+
+# Android port: local toolchain and macOS junk
+/toolchain
+.DS_Store

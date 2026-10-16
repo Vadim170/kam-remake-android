@@ -25,7 +25,7 @@ implementation
 uses
   SysUtils,
   KM_FileIO, KM_Cursor,
-  KM_GameApp, KM_CrashReport, KM_Game,
+  KM_GameApp, KM_Crashreport, KM_Game,
   KM_Log, KM_ResTexts, KM_Defaults, KM_Points,
   KM_CommonExceptions, KM_Settings, KM_GameAppSettings, KM_ServerSettings;
 

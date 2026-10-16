@@ -91,7 +91,7 @@ type
                                           aOnCheckTerminated: TBooleanFuncSimple = nil);
 
     procedure LoadFromRXXFile(const aFileName: string; aStartingIndex: Integer = 1);
-    procedure OverloadRXDataFromFolder(const aFolder: string; aOnProgress: TProc<string>; aSoftenShadows: Boolean = True);
+    procedure OverloadRXDataFromFolder(const aFolder: string; aOnProgress: {$IFDEF FPC}TUnicodeStringEvent{$ELSE}TProc<string>{$ENDIF}; aSoftenShadows: Boolean = True);
 
     function GetSoftenShadowType(aID: Integer): TKMSpriteSoftening;
 
@@ -241,8 +241,8 @@ uses
   Types,
   {$IFDEF WDC}
   IOUtils,
-  StrUtils,
   {$ENDIF}
+  StrUtils,
   KromUtils,
   {$IFDEF LOAD_GAME_RES_ASYNC}
 
@@ -934,14 +934,64 @@ begin
 end;
 
 
+{$IFDEF FPC}
+// Recursive replacement for TDirectory.GetFiles(aFolder, aMask, soAllDirectories) - returns full paths
+procedure FpcFindFilesRecursive(const aFolder, aMask: string; aList: TStringList);
+var
+  sr: TSearchRec;
+  dir: string;
+begin
+  dir := IncludeTrailingPathDelimiter(aFolder);
+  if FindFirst(dir + aMask, faAnyFile, sr) = 0 then
+  try
+    repeat
+      if (sr.Attr and faDirectory) = 0 then
+        aList.Add(dir + sr.Name);
+    until FindNext(sr) <> 0;
+  finally
+    FindClose(sr);
+  end;
+
+  if FindFirst(dir + '*', faDirectory, sr) = 0 then
+  try
+    repeat
+      if ((sr.Attr and faDirectory) <> 0) and (sr.Name <> '.') and (sr.Name <> '..') then
+        FpcFindFilesRecursive(dir + sr.Name, aMask, aList);
+    until FindNext(sr) <> 0;
+  finally
+    FindClose(sr);
+  end;
+end;
+{$ENDIF}
+
+
 procedure TKMSpritePack.CollectSpriteFilesToOverloadInFolder(const aFolder: string; aFileList: TStringList);
-{$IFDEF WDC}
 var
   filePath: string;
+{$IFDEF FPC}
+  I, tmp: Integer;
+  files: TStringList;
+{$ELSE}
   filterPredicate: TDirectory.TFilterPredicate;
 {$ENDIF}
 begin
-  {$IFDEF WDC}
+  {$IFDEF FPC}
+  files := TStringList.Create;
+  try
+    FpcFindFilesRecursive(aFolder, IntToStr(Ord(fRT) + 1) + '_*.png', files);
+    for I := 0 to files.Count - 1 do
+    begin
+      filePath := files[I];
+      if Pos(OVERLOAD_SKIP_MASK, ExtractRelativePath(aFolder, filePath)) > 0 then Continue;
+      // Search filter we are using makes sure we get only X_*****.png filenames
+      // Hence we need to check only for the ***** being digits
+      if TryStrToInt(Copy(ExtractFileName(filePath), 3, Length(ExtractFileName(filePath))-6), tmp) then
+        aFileList.Add(ExtractRelativePath(aFolder, filePath));
+    end;
+  finally
+    files.Free;
+  end;
+  {$ELSE}
   filterPredicate :=
     function(const aPath: string; const aSearchRec: TSearchRec): Boolean
     var
@@ -1003,7 +1053,6 @@ begin
   if SKIP_RENDER then Exit;
   if not DirectoryExists(aFolder) then Exit;
 
-  {$IFDEF WDC}
   idList := TList<Integer>.Create;
   try
     AppendFolder(idList);
@@ -1013,15 +1062,13 @@ begin
   finally
     idList.Free;
   end;
-  {$ENDIF}
 end;
 
 
 // Parse all valid files in Sprites folder:
 // - append or replace original sprites with new ones
 // - exclude original sprites if necessary as well
-procedure TKMSpritePack.OverloadRXDataFromFolder(const aFolder: string; aOnProgress: TProc<string>; aSoftenShadows: Boolean = True);
-  {$IFDEF WDC}
+procedure TKMSpritePack.OverloadRXDataFromFolder(const aFolder: string; aOnProgress: {$IFDEF FPC}TUnicodeStringEvent{$ELSE}TProc<string>{$ENDIF}; aSoftenShadows: Boolean = True);
   // Append all PNGs including the subfolders
   // Pattern is X_nnnn.png, where nnnn is dynamic (1..n chars) for modders convenience
   procedure AppendFolder;
@@ -1070,8 +1117,30 @@ procedure TKMSpritePack.OverloadRXDataFromFolder(const aFolder: string; aOnProgr
   var
     id: Integer;
     filePath, s: string;
+    {$IFDEF FPC}
+    I: Integer;
+    files: TStringList;
+    {$ELSE}
     filterPredicate: TDirectory.TFilterPredicate;
+    {$ENDIF}
   begin
+    {$IFDEF FPC}
+    files := TStringList.Create;
+    try
+      FpcFindFilesRecursive(aFolder, IntToStr(Ord(fRT) + 1) + '_*', files);
+      for I := 0 to files.Count - 1 do
+      begin
+        filePath := files[I];
+        if Pos(OVERLOAD_SKIP_MASK, ExtractRelativePath(aFolder, filePath)) > 0 then Continue;
+        s := ExtractFileName(filePath);
+        // Search filter makes sure we get only X_***** filenames, check that ***** are digits
+        if TryStrToInt(Copy(s, 3, Length(s)-2), id) then
+          fRXData.Flag[id] := 0;
+      end;
+    finally
+      files.Free;
+    end;
+    {$ELSE}
     filterPredicate :=
       function(const aPath: string; const aSearchRec: TSearchRec): Boolean
       var
@@ -1092,16 +1161,14 @@ procedure TKMSpritePack.OverloadRXDataFromFolder(const aFolder: string; aOnProgr
       if TryStrToInt(Copy(s, 3, Length(s)-2), id) then
         fRXData.Flag[id] := 0;
     end;
+    {$ENDIF}
   end;
-  {$ENDIF}
 begin
   if SKIP_RENDER then Exit;
   if not DirectoryExists(aFolder) then Exit;
 
-  {$IFDEF WDC}
   AppendFolder;
   DeleteExtra;
-  {$ENDIF}
 end;
 
 

@@ -66,6 +66,9 @@ type
 
   {$IFDEF FPC}
   TProc = procedure;
+  // FPC's Classes.TGetStrProc takes AnsiString (RTL is compiled with string = AnsiString),
+  // while KaM handlers take string (= UnicodeString, like in Delphi). Use units must list KM_CommonTypes after Classes
+  TGetStrProc = procedure (const S: string) of object;
   {$ENDIF}
 
   TKMAnimLoop = packed record

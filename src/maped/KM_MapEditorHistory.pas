@@ -148,7 +148,7 @@ uses
   KM_HandsCollection, KM_Hand, KM_HandTypes, KM_HandEntity,
   KM_Units, KM_UnitsCollection,
   KM_GameParams, KM_GameSettings,
-  KM_Game, KM_CommonUtils, KM_Resource, KM_HouseTownhall, KM_HouseBarracks, KM_HouseStore,
+  KM_Game, KM_CommonUtils, KM_Resource, KM_HouseTownHall, KM_HouseBarracks, KM_HouseStore,
   KM_UnitGroup, KM_Terrain;
 
 

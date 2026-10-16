@@ -2,7 +2,7 @@ unit KM_HTTPClientLNet;
 {$I KaM_Remake.inc}
 interface
 uses
-  Classes, SysUtils, lNet, URLUtils, lHTTP;
+  Classes, SysUtils, lNet, URLUtils, lHTTP, KM_CommonTypes;
 
 type
   TKMHTTPClientLNet = class
@@ -13,8 +13,8 @@ type
     fOnGetCompleted: TGetStrProc;
     fIsUTF8: Boolean;
     procedure HTTPClientDoneInput(ASocket: TLHTTPClientSocket);
-    procedure HTTPClientError(const msg: string; aSocket: TLSocket);
-    function HTTPClientInput(ASocket: TLHTTPClientSocket; ABuffer: PChar; ASize: Integer): Integer;
+    procedure HTTPClientError(const msg: AnsiString; aSocket: TLSocket);
+    function HTTPClientInput(ASocket: TLHTTPClientSocket; ABuffer: PAnsiChar; ASize: Integer): Integer;
   public
     constructor Create;
     destructor Destroy; override;
@@ -51,15 +51,15 @@ end;
 
 procedure TKMHTTPClientLNet.GetURL(const aURL: string; aIsUTF8: Boolean);
 var
-  proto, user, pass, host, port, path: string;
+  proto, user, pass, host, port, path: AnsiString;
 begin
   fIsUTF8 := aIsUTF8;
   fHTTPClient.Disconnect(True); //If we were doing something, stop it
   HTTPBuffer := '';
-  ParseURL(aURL, proto, user, pass, host, port, path);
+  ParseURL(AnsiString(aURL), proto, user, pass, host, port, path);
   fHTTPClient.Host := host;
   fHTTPClient.URI := path;
-  fHTTPClient.Port := StrToIntDef(port, 80);
+  fHTTPClient.Port := StrToIntDef(string(port), 80);
   fHTTPClient.SendRequest;
 end;
 
@@ -79,14 +79,14 @@ begin
 end;
 
 
-procedure TKMHTTPClientLNet.HTTPClientError(const msg: string; aSocket: TLSocket);
+procedure TKMHTTPClientLNet.HTTPClientError(const msg: AnsiString; aSocket: TLSocket);
 begin
   if Assigned(fOnError) then
     fOnError(msg);
 end;
 
 
-function TKMHTTPClientLNet.HTTPClientInput(ASocket: TLHTTPClientSocket; ABuffer: PChar; ASize: Integer): Integer;
+function TKMHTTPClientLNet.HTTPClientInput(ASocket: TLHTTPClientSocket; ABuffer: PAnsiChar; ASize: Integer): Integer;
 var
   oldLength: dword;
 begin

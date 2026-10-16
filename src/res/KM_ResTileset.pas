@@ -683,7 +683,97 @@ var
   nRoot, nAnimLayer: TJsonObject;
   nTiles, nTerKinds, nAnimLayers, nAnims: TJsonArray;
 {$ENDIF}
+{$IFDEF FPC}
+  // FPC: there is no JsonDataObjects. Generate exactly the same compact JSON as JsonDataObjects does
+  // (it is used for tileset CRC, which must match the Delphi build, e.g. for MP and saves)
+  function BoolStr(aValue: Boolean): string;
+  begin
+    if aValue then
+      Result := 'true'
+    else
+      Result := 'false';
+  end;
+var
+  I, J, K: Integer;
+  sb: TStringList;
+  line: string;
+  raw: RawByteString;
+{$ENDIF}
 begin
+  {$IFDEF FPC}
+  // Only compact output into a stream (for CRC) is supported
+  if not aCompact or (aSaveStream = nil) then Exit;
+
+  sb := TStringList.Create;
+  try
+    sb.Add('{"Tiles":[');
+    for I := 0 to TILES_CNT - 1 do
+    begin
+      line := '';
+      if I > 0 then
+        line := ',';
+      line := line + '{"ID":' + IntToStr(I)
+                   + ',"Walkable":' + BoolStr(fTiles[I].Walkable)
+                   + ',"Roadable":' + BoolStr(fTiles[I].Roadable)
+                   + ',"Stone":' + IntToStr(fTiles[I].Stone)
+                   + ',"Coal":' + IntToStr(fTiles[I].Coal)
+                   + ',"Iron":' + IntToStr(fTiles[I].Iron)
+                   + ',"Gold":' + IntToStr(fTiles[I].Gold)
+                   + ',"IronMinable":' + BoolStr(fTiles[I].IronMinable)
+                   + ',"GoldMinable":' + BoolStr(fTiles[I].GoldMinable)
+                   + ',"Water":' + BoolStr(fTiles[I].Water)
+                   + ',"HasWater":' + BoolStr(fTiles[I].HasWater)
+                   + ',"Ice":' + BoolStr(fTiles[I].Ice)
+                   + ',"Snow":' + BoolStr(fTiles[I].Snow)
+                   + ',"Sand":' + BoolStr(fTiles[I].Sand)
+                   + ',"Soil":' + BoolStr(fTiles[I].Soil)
+                   + ',"Corn":' + BoolStr(fTiles[I].Corn)
+                   + ',"Wine":' + BoolStr(fTiles[I].Wine)
+                   + ',"CornersTerKinds":['
+                   + '"' + GetEnumName(TypeInfo(TKMTerrainKind), Integer(fTiles[I].TerKinds[0])) + '",'
+                   + '"' + GetEnumName(TypeInfo(TKMTerrainKind), Integer(fTiles[I].TerKinds[1])) + '",'
+                   + '"' + GetEnumName(TypeInfo(TKMTerrainKind), Integer(fTiles[I].TerKinds[2])) + '",'
+                   + '"' + GetEnumName(TypeInfo(TKMTerrainKind), Integer(fTiles[I].TerKinds[3])) + '"]';
+
+      if fTiles[I].Animation.HasAnim and (Length(fTiles[I].Animation.Layers) > 0) then
+      begin
+        line := line + ',"AnimLayers":[';
+        for J := Low(fTiles[I].Animation.Layers) to High(fTiles[I].Animation.Layers) do
+        begin
+          if J > Low(fTiles[I].Animation.Layers) then
+            line := line + ',';
+          line := line + '{"Frames":' + IntToStr(fTiles[I].Animation.Layers[J].Frames);
+          if Length(fTiles[I].Animation.Layers[J].Anims) > 0 then
+          begin
+            line := line + ',"Anims":[';
+            for K := Low(fTiles[I].Animation.Layers[J].Anims) to High(fTiles[I].Animation.Layers[J].Anims) do
+            begin
+              if K > Low(fTiles[I].Animation.Layers[J].Anims) then
+                line := line + ',';
+              line := line + IntToStr(fTiles[I].Animation.Layers[J].Anims[K]);
+            end;
+            line := line + ']';
+          end;
+          line := line + '}';
+        end;
+        line := line + ']';
+      end;
+      line := line + '}';
+      sb.Add(line);
+    end;
+    sb.Add(']}');
+
+    // Concatenate without line breaks, UTF8 without BOM
+    line := '';
+    for I := 0 to sb.Count - 1 do
+      line := line + sb[I];
+    raw := UTF8Encode(line);
+    if Length(raw) > 0 then
+      aSaveStream.WriteBuffer(raw[1], Length(raw));
+  finally
+    sb.Free;
+  end;
+  {$ENDIF}
   {$IFDEF WDC}
   JsonSerializationConfig.InlinedByDefault := True;
   JsonSerializationConfig.IndentChar := '  '; // 2 spaces

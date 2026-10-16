@@ -3,6 +3,7 @@ unit KM_HTTPClient;
 interface
 uses
   Classes, SysUtils
+  {$IFDEF FPC} ,KM_CommonTypes {$ENDIF}
   {$IFDEF WDC} ,KM_HTTPClientOverbyte {$ENDIF}
   {$IFDEF FPC} ,KM_HTTPClientLNet {$ENDIF};
 

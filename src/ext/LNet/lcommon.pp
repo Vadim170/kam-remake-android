@@ -58,10 +58,14 @@ const
     {$IFDEF LINUX} // TODO: fix this crap, some don't even have MSG_NOSIGNAL
     LMSG = MSG_NOSIGNAL;
     {$ELSE}
+      {$IFDEF ANDROID} // KaM: Android is Linux kernel too, avoid SIGPIPE on writes to closed sockets
+      LMSG = $4000; // MSG_NOSIGNAL
+      {$ELSE}
       {$IFDEF FREEBSD}
         LMSG = $20000; // FPC BUG in 2.0.4-, freeBSD value
       {$ELSE}
         LMSG = 0;
+      {$ENDIF}
       {$ENDIF}
     {$ENDIF}
     
@@ -391,12 +395,55 @@ begin
     Result := HE.Name;
 end;
 
+{$IFDEF ANDROID}
+// Android has no /etc/resolv.conf, so FPC netdb can't use the system DNS. Use bionic getaddrinfo instead
+type
+  PAndroidAddrInfo = ^TAndroidAddrInfo;
+  TAndroidAddrInfo = record
+    ai_flags, ai_family, ai_socktype, ai_protocol: LongInt;
+    ai_addrlen: LongWord;
+    ai_canonname: PAnsiChar;
+    ai_addr: PByte;
+    ai_next: PAndroidAddrInfo;
+  end;
+
+function android_getaddrinfo(node, service: PAnsiChar; hints: PAndroidAddrInfo; var res: PAndroidAddrInfo): LongInt; cdecl; external 'c' name 'getaddrinfo';
+procedure android_freeaddrinfo(res: PAndroidAddrInfo); cdecl; external 'c' name 'freeaddrinfo';
+
+function AndroidResolveIPv4(const Name: string): string;
+var
+  hints: TAndroidAddrInfo;
+  res: PAndroidAddrInfo;
+  host: AnsiString;
+begin
+  Result := '';
+  FillChar(hints, SizeOf(hints), 0);
+  hints.ai_family := 2; // AF_INET
+  hints.ai_socktype := 1; // SOCK_STREAM
+  host := AnsiString(Name);
+  res := nil;
+  if android_getaddrinfo(PAnsiChar(host), nil, @hints, res) <> 0 then Exit;
+  try
+    if (res <> nil) and (res^.ai_addr <> nil) then
+      // sockaddr_in: family(2) port(2) addr(4)
+      Result := Format('%d.%d.%d.%d', [res^.ai_addr[4], res^.ai_addr[5], res^.ai_addr[6], res^.ai_addr[7]]);
+  finally
+    android_freeaddrinfo(res);
+  end;
+end;
+{$ENDIF}
+
 function GetHostIP(const Name: string): string;
 var
   HE: THostEntry;
 begin
   Result := '';
+  {$IFDEF ANDROID}
+  Result := AndroidResolveIPv4(Name);
+  if Result <> '' then Exit;
+  {$ENDIF}
   if GetHostByName(Name, HE) then
+
     Result := HostAddrToStr(Cardinal(HE.Addr)) // for localhost
   else if ResolveHostByName(Name, HE) then
     Result := NetAddrToStr(Cardinal(HE.Addr));

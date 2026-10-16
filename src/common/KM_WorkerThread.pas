@@ -16,6 +16,31 @@ type
   end;
   {$ENDIF}
 
+  {$IFDEF FPC}
+  // FPC 3.2.2 has no anonymous methods, hence callers can't pass closures.
+  // Callers do their work synchronously under {$IFDEF FPC} (see e.g. KM_WorkerThreadUtils),
+  // so this "worker" just exposes the same API and never has pending work.
+  TKMWorkerProc = procedure of object;
+  TKMWorkerDoneProc = procedure(const aTaskName: string) of object;
+
+  TKMWorkerThread = class
+  private
+    function GetFinished: Boolean;
+  public
+    //Special mode for exception handling. Runs work synchronously inside QueueWork
+    fSynchronousExceptionMode: Boolean;
+
+    constructor Create(const aThreadName: string = '');
+
+    // Work is executed synchronously (immediately)
+    procedure QueueWork(aProc: TKMWorkerProc; aTaskName: string = '');
+    procedure QueueWorkAndCallback(aProc: TKMWorkerProc; aOnDone: TKMWorkerDoneProc = nil; aTaskName: string = '');
+    procedure QueueWorkAndLog(aProc: TKMWorkerProc; aTaskName: string = '');
+
+    procedure WaitForAllWorkToComplete;
+    property Finished: Boolean read GetFinished;
+  end;
+  {$ELSE}
   TKMWorkerThread = class(TThread)
   // FPC 3.2.2 still has problems with TProc and TProc<>
   // Hence the simplest solution is to excelude this utility unit from DedicatedServer projects
@@ -44,12 +69,12 @@ type
     procedure WaitForAllWorkToComplete;
   {$ENDIF}
   end;
+  {$ENDIF}
 
 
   // Holder of WorkerThread
   // It should manage its state and recreate an instance if needed
   TKMWorkerThreadHolder = class
-  {$IFDEF WDC}
   private
     fWorkerThreadName: string;
     fWorkerThread: TKMWorkerThread;
@@ -59,13 +84,56 @@ type
     destructor Destroy; override;
 
     property Worker: TKMWorkerThread read GetWorkerThread write fWorkerThread;
-  {$ENDIF}
   end;
 
 
 implementation
 uses
   KM_Log;
+
+
+{$IFDEF FPC}
+{ TKMWorkerThread (synchronous FPC implementation) }
+constructor TKMWorkerThread.Create(const aThreadName: string = '');
+begin
+  inherited Create;
+  fSynchronousExceptionMode := False;
+end;
+
+
+function TKMWorkerThread.GetFinished: Boolean;
+begin
+  Result := False;
+end;
+
+
+procedure TKMWorkerThread.QueueWork(aProc: TKMWorkerProc; aTaskName: string = '');
+begin
+  QueueWorkAndCallback(aProc, nil, aTaskName);
+end;
+
+
+procedure TKMWorkerThread.QueueWorkAndCallback(aProc: TKMWorkerProc; aOnDone: TKMWorkerDoneProc = nil; aTaskName: string = '');
+begin
+  aProc();
+
+  if Assigned(aOnDone) then
+    aOnDone(aTaskName);
+end;
+
+
+procedure TKMWorkerThread.QueueWorkAndLog(aProc: TKMWorkerProc; aTaskName: string = '');
+begin
+  aProc();
+  gLog.AddTime('Job "%s" is completed', [aTaskName]);
+end;
+
+
+procedure TKMWorkerThread.WaitForAllWorkToComplete;
+begin
+  // Nothing to wait for - all work is done synchronously
+end;
+{$ENDIF}
 
 
 {$IFDEF WDC}
@@ -257,6 +325,9 @@ begin
 end;
 
 
+{$ENDIF}
+
+
 { TKMWorkerThreadHolder }
 constructor TKMWorkerThreadHolder.Create(const aThreadName: String);
 begin
@@ -294,7 +365,6 @@ begin
 
   Result := fWorkerThread;
 end;
-{$ENDIF}
 
 
 end.

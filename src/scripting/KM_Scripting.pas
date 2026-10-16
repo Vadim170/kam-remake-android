@@ -1791,7 +1791,7 @@ end;
 
 procedure TKMScripting.ExportDataToText;
 var
-  s: string;
+  s: {$IFDEF FPC}AnsiString{$ELSE}string{$ENDIF};
   SL: TStringList;
 begin
   if Self = nil then Exit;
@@ -2084,7 +2084,11 @@ begin
   {$IFNDEF FPC}
   Result := THashBobJenkins.GetHashValue(s);
   {$ELSE}
-  Result := BobJenkinsHash(s, Length(s), 0);
+  // Same as Delphi THashBobJenkins.GetHashValue(string): hash of the string characters (UTF-16)
+  if s = '' then
+    Result := BobJenkinsHash(s, 0, 0)
+  else
+    Result := BobJenkinsHash(PChar(s)^, Length(s) * SizeOf(Char), 0);
   {$ENDIF}
 end;
 
