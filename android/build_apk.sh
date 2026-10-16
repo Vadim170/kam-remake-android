@@ -23,5 +23,7 @@ if [ "${KAM_BUNDLE_DATA:-0}" = 1 ]; then
   GRADLE_ARGS+=(-Pkam.bundleData=true)
 fi
 cd "$ANDROID_DIR"
+# Gradle needs the SDK location
+[ -f local.properties ] || echo "sdk.dir=${ANDROID_HOME:-$HOME/Library/Android/sdk}" > local.properties
 "${GRADLE:-./gradlew}" -q assemble${KAM_BUILD_TYPE:-Debug} ${GRADLE_ARGS[@]+"${GRADLE_ARGS[@]}"}
 ls -la "$ANDROID_DIR"/app/build/outputs/apk/*/*.apk
