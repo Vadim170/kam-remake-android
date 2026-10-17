@@ -17,6 +17,7 @@ library kamcore;
 //   KM_NetAuthSecure - not available in sources; KM_NetAuthUnsecure is used instead (DBG_SKIP_SECURE_AUTH)
 uses
   cthreads, // Required for thread support
+  KM_AndroidHeap, // FastMM-like amortized growth of large blocks
   cwstring, // UTF8 <-> UTF16 conversions with DefaultSystemCodePage = UTF8
   uPSCompiler,
   uPSDebugger,
@@ -384,7 +385,8 @@ exports
   kam_video_finished,
   kam_in_game,
   kam_text_input_bottom,
-  kam_text_field_tapped;
+  kam_text_field_tapped,
+  kam_selftest;
 
 begin
 end.

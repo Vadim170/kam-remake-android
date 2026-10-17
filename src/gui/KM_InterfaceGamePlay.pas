@@ -384,6 +384,7 @@ type
     {$IFDEF ANDROID}
     procedure ScrollSidebar(aDelta: Integer);
     function IsOverScrollableSidebar(X, Y: Integer): Boolean;
+    function IsFullScreenPageVisible: Boolean;
     property SidebarScrollMax: Integer read fSidebarScrollMax;
     {$ENDIF}
     procedure SyncUI(aMoveViewport: Boolean = True); override;
@@ -1054,7 +1055,16 @@ begin
 end;
 
 
+// Results/statistics pages are designed for the full menu size (1024x768)
+function TKMGamePlayInterface.IsFullScreenPageVisible: Boolean;
+begin
+  Result := fGuiGameResultsSP.Visible or fGuiGameResultsMP.Visible;
+
+end;
+
+
 function TKMGamePlayInterface.IsOverScrollableSidebar(X, Y: Integer): Boolean;
+
 begin
   Result := (fSidebarScrollMax > 0) and (X < TOOLBAR_WIDTH)
             and not ((X >= MinimapView.AbsLeft) and (X < MinimapView.AbsLeft + MinimapView.Width)

@@ -60,6 +60,19 @@ Options: `KAM_MULTIPLAYER=1` shows the Multiplayer menu (hidden by default, not 
 `KAM_FPC_FLAGS=-dANDROID_GLDEBUG` / `-dANDROID_MEMDEBUG` add GL and memory diagnostics.
 `./run_test.sh` installs, runs and collects logcat with symbolized crash stacks.
 
+## Tests (end-to-end on a device)
+
+The app has a built-in content smoke test: it starts missions one by one with real data and rendering,
+simulates game time and reports exceptions, error messages and crashes (with symbolized stacks).
+
+```sh
+ANDROID_SERIAL=<device> ./selftest.sh            # fast: first mission of every campaign + tutorials (~20 s)
+ANDROID_SERIAL=<device> ./selftest.sh all        # every campaign mission and single player map
+```
+
+Modes: `campaigns`, `campaigns-all`, `maps`, `all`. Results are also written to
+`Android/data/org.kamremake.android/files/Logs/selftest.txt`.
+
 ## How it works
 
 - `pascal/kamcore.lpr` — the engine as a shared library (`libkamcore.so`), `pascal/KM_AndroidExports.pas` — C API and touch gestures

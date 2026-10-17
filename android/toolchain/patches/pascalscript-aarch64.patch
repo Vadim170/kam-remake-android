@@ -981,10 +981,21 @@ index 0000000..7509907
 +  ldp   x29, x30, [sp], #16
 +end;
 diff --git a/Source/uPSCompiler.pas b/Source/uPSCompiler.pas
-index 4d0dde2..d578723 100644
+index 4d0dde2..9b74120 100644
 --- a/Source/uPSCompiler.pas
 +++ b/Source/uPSCompiler.pas
-@@ -6645,6 +6645,7 @@ function TPSPascalCompiler.ProcessSub(BlockInfo: TPSBlockInfo): Boolean;
+@@ -1886,7 +1886,9 @@ end;
+ 
+ procedure BlockWriteByte(BlockInfo: TPSBlockInfo; b: Byte);
+ begin
+-  BlockInfo.Proc.Data := BlockInfo.Proc.Data + tbtChar(b);
++  // Append in place (amortized), "Data := Data + b" copies the whole bytecode for every byte
++  SetLength(BlockInfo.Proc.FData, Length(BlockInfo.Proc.FData) + 1);
++  BlockInfo.Proc.FData[Length(BlockInfo.Proc.FData)] := tbtChar(b);
+ end;
+ 
+ procedure BlockWriteData(BlockInfo: TPSBlockInfo; const Data; Len: Longint);
+@@ -6645,6 +6647,7 @@ function TPSPascalCompiler.ProcessSub(BlockInfo: TPSBlockInfo): Boolean;
        tmp, tmpn: TPSValue;
        tmp3: TPSValueProcNo;
        tmp2: Boolean;
@@ -992,7 +1003,7 @@ index 4d0dde2..d578723 100644
  
        function FindSubR(const n: tbtString; FType: TPSType): Cardinal;
        var
-@@ -6841,7 +6842,8 @@ function TPSPascalCompiler.ProcessSub(BlockInfo: TPSBlockInfo): Boolean;
+@@ -6841,7 +6844,8 @@ function TPSPascalCompiler.ProcessSub(BlockInfo: TPSBlockInfo): Boolean;
                x := nil;
                exit;
              end;
@@ -1002,7 +1013,7 @@ index 4d0dde2..d578723 100644
              if not IsIntType(bType) and not (bType = btEnum) then
              begin
                MakeError('', ecTypeMismatch, '');
-@@ -12552,8 +12554,9 @@ begin
+@@ -12552,8 +12556,9 @@ begin
    {$ENDIF}
    AddType('AnsiString', btString);
    {$IFNDEF PS_NOWIDESTRING}

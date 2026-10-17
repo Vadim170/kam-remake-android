@@ -30,6 +30,7 @@ final class KaMNative {
     static native boolean inGame();
     static native int textInputBottom();
     static native boolean textFieldTapped();
+    static native void selfTest(String mode);
 
     // Called from native code (GL thread)
     static void onShowMessage(String title, String text) {

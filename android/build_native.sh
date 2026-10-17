@@ -10,6 +10,8 @@ FPC_SRC="$TC/fpc-3.2.2"
 LAZ="$TC/lazarus"
 UNITS="${KAM_UNITS:-$ANDROID_DIR/build/units_main}"
 OUT="${KAM_OUT:-$ANDROID_DIR/app/src/main/jniLibs/arm64-v8a}"
+# Clean build: incremental FPC 3.2.2 builds hit "Internal error 200611031" with generics (KAM_INCREMENTAL=1 to skip)
+[ "${KAM_INCREMENTAL:-0}" = 1 ] || rm -rf "$UNITS"
 mkdir -p "$UNITS" "$OUT"
 export PATH="$TC/bin:$PATH"
 

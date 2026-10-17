@@ -52,6 +52,7 @@ procedure kam_video_finished; cdecl;
 function kam_in_game: Integer; cdecl;
 function kam_text_input_bottom: Integer; cdecl;
 function kam_text_field_tapped: Integer; cdecl;
+procedure kam_selftest(aMode: PAnsiChar); cdecl;
 
 implementation
 uses
@@ -60,6 +61,7 @@ uses
   KM_InterfaceDefaults, KM_InterfaceGame, KM_InterfaceGamePlay, KM_InterfaceMapEditor, KM_Game, KM_Viewport,
   KM_Controls, KM_ControlsEdit,
   KM_Log, dglOpenGL, KM_ResSprites, KM_ResTypes, KM_Video, KM_Render,
+  KM_AndroidSelfTest,
   KMAndroidHost, KMAndroidLog;
 
 const
@@ -412,6 +414,8 @@ begin
   try
     CheckSynchronize;
     CheckLongPress;
+    if SelfTestActive then
+      SelfTestFrame;
     gMain.Frame;
     {$IFDEF ANDROID_GLDEBUG}
     LogGLErrors;
@@ -489,23 +493,34 @@ begin
     mbRight:  begin Include(fButtons, ssRight);  gHostKeyDown[VK_RBUTTON] := True; end;
     mbMiddle: begin Include(fButtons, ssMiddle); gHostKeyDown[VK_MBUTTON] := True; end;
   end;
-  gGameApp.MouseDown(aButton, fButtons, pt.X, pt.Y);
+  // Same as desktop TFormMain: middle button is handled as a key (drag scrolling)
+  if aButton = mbMiddle then
+    gGameApp.KeyDown(VK_MBUTTON, fButtons, True)
+  else
+    gGameApp.MouseDown(aButton, fButtons, pt.X, pt.Y);
 end;
 
 
 procedure SendUp(aButton: TMouseButton; const P: TPointF);
 var
   pt: TPoint;
+  shift: TShiftState;
 begin
   if gGameApp = nil then Exit;
   pt := MousePt(P);
   gHostCursorPos := pt;
+  // Same as desktop TFormMain: the released button is included in Shift for MouseUp
+  // (e.g. message scrolls check ssLeft to tell open from delete)
+  shift := fButtons;
   case aButton of
-    mbLeft:   begin Exclude(fButtons, ssLeft);   gHostKeyDown[VK_LBUTTON] := False; end;
-    mbRight:  begin Exclude(fButtons, ssRight);  gHostKeyDown[VK_RBUTTON] := False; end;
-    mbMiddle: begin Exclude(fButtons, ssMiddle); gHostKeyDown[VK_MBUTTON] := False; end;
+    mbLeft:   begin Include(shift, ssLeft);   Exclude(fButtons, ssLeft);   gHostKeyDown[VK_LBUTTON] := False; end;
+    mbRight:  begin Include(shift, ssRight);  Exclude(fButtons, ssRight);  gHostKeyDown[VK_RBUTTON] := False; end;
+    mbMiddle: begin Include(shift, ssMiddle); Exclude(fButtons, ssMiddle); gHostKeyDown[VK_MBUTTON] := False; end;
   end;
-  gGameApp.MouseUp(aButton, fButtons, pt.X, pt.Y);
+  if aButton = mbMiddle then
+    gGameApp.KeyUp(VK_MBUTTON, shift)
+  else
+    gGameApp.MouseUp(aButton, shift, pt.X, pt.Y);
 end;
 
 
@@ -925,8 +940,14 @@ end;
 function kam_in_game: Integer; cdecl;
 begin
   Result := 0;
-  if (gGameApp <> nil) and (gGameApp.Game <> nil) then
+  // Only while the game map with its sidebar is on screen (not the loading page or other menu pages)
+  if (gGameApp <> nil) and (gGameApp.Game <> nil) and (gGameApp.ActiveInterface is TKMUserInterfaceGame) then
     Result := 1;
+  // Mission results and statistics need the menu screen size
+  if (Result = 1) and (gGame.GamePlayInterface <> nil)
+  and (gGameApp.ActiveInterface = gGame.GamePlayInterface)
+  and gGame.GamePlayInterface.IsFullScreenPageVisible then
+    Result := 0;
 end;
 
 
@@ -955,6 +976,14 @@ function kam_text_field_tapped: Integer; cdecl;
 begin
   Result := Ord(fTextFieldTapped);
   fTextFieldTapped := False;
+end;
+
+
+// Starts the content smoke test (see KM_AndroidSelfTest)
+procedure kam_selftest(aMode: PAnsiChar); cdecl;
+begin
+  if (gMain <> nil) and gMain.Started then
+    SelfTestStart(string(aMode));
 end;
 
 

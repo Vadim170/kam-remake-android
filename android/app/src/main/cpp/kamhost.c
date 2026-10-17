@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
 #include <unwind.h>
 #include <link.h>
 
@@ -43,6 +44,7 @@ extern void kam_video_finished(void);
 extern int kam_in_game(void);
 extern int kam_text_input_bottom(void);
 extern int kam_text_field_tapped(void);
+extern void kam_selftest(const char *mode);
 
 static JavaVM *g_vm;
 static jclass g_cls;
@@ -164,6 +166,41 @@ static void scan_stack(uintptr_t sp) {
   }
 }
 
+// ---------- Stall sampler: logs the engine stack when a frame takes too long ----------
+
+static volatile pthread_t g_frame_thread;
+static volatile long long g_frame_start_ms;
+
+static long long mono_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void stall_handler(int sig, siginfo_t *info, void *ucv) {
+  (void)sig; (void)info;
+  ucontext_t *uc = (ucontext_t *)ucv;
+  __android_log_print(ANDROID_LOG_WARN, "KaMCrash", "STALL frame running %lld ms", mono_ms() - g_frame_start_ms);
+  log_addr("STALL pc", (uintptr_t)uc->uc_mcontext.pc);
+  log_addr("STALL lr", (uintptr_t)uc->uc_mcontext.regs[30]);
+  scan_stack((uintptr_t)uc->uc_mcontext.sp);
+}
+
+static void *watchdog_thread(void *arg) {
+  (void)arg;
+  long long last_sample = 0;
+  for (;;) {
+    sleep(1);
+    long long start = g_frame_start_ms;
+    long long now = mono_ms();
+    if (start && now - start > 3000 && now - last_sample > 3000) {
+      last_sample = now;
+      pthread_kill(g_frame_thread, SIGURG);
+    }
+  }
+  return NULL;
+}
+
 static void crash_handler(int sig, siginfo_t *info, void *ucv) {
   ucontext_t *uc = (ucontext_t *)ucv;
   __android_log_print(ANDROID_LOG_ERROR, "KaMCrash", "signal %d, fault addr %p", sig, info->si_addr);
@@ -192,6 +229,15 @@ static void install_crash_handler(void) {
   sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
   int sigs[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
   for (unsigned i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++) sigaction(sigs[i], &sa, &g_old_sa[sigs[i]]);
+
+  struct sigaction ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.sa_sigaction = stall_handler;
+  ss.sa_flags = SA_SIGINFO | SA_RESTART;
+  sigaction(SIGURG, &ss, NULL);
+  pthread_t t;
+  pthread_create(&t, NULL, watchdog_thread, NULL);
+  pthread_detach(t);
 }
 
 // ---------- stdout/stderr -> logcat (gl4es and RTL write diagnostics there) ----------
@@ -266,7 +312,13 @@ JNI(jboolean, init)(JNIEnv *env, jclass cls, jstring dataDir, jint w, jint h) {
   return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-JNI(void, frame)(JNIEnv *env, jclass cls) { (void)env; (void)cls; kam_frame(); }
+JNI(void, frame)(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  g_frame_thread = pthread_self();
+  g_frame_start_ms = mono_ms();
+  kam_frame();
+  g_frame_start_ms = 0;
+}
 JNI(void, resize)(JNIEnv *env, jclass cls, jint w, jint h) { (void)env; (void)cls; kam_resize(w, h); }
 JNI(void, pause)(JNIEnv *env, jclass cls) { (void)env; (void)cls; kam_pause(); }
 JNI(void, resume)(JNIEnv *env, jclass cls) { (void)env; (void)cls; kam_resume(); }
@@ -285,3 +337,9 @@ JNI(void, videoFinished)(JNIEnv *env, jclass cls) { (void)env; (void)cls; kam_vi
 JNI(jboolean, inGame)(JNIEnv *env, jclass cls) { (void)env; (void)cls; return kam_in_game() ? JNI_TRUE : JNI_FALSE; }
 JNI(jint, textInputBottom)(JNIEnv *env, jclass cls) { (void)env; (void)cls; return kam_text_input_bottom(); }
 JNI(jboolean, textFieldTapped)(JNIEnv *env, jclass cls) { (void)env; (void)cls; return kam_text_field_tapped() ? JNI_TRUE : JNI_FALSE; }
+JNI(void, selfTest)(JNIEnv *env, jclass cls, jstring mode) {
+  (void)cls;
+  const char *m = (*env)->GetStringUTFChars(env, mode, NULL);
+  kam_selftest(m);
+  (*env)->ReleaseStringUTFChars(env, mode, m);
+}

@@ -150,6 +150,7 @@ public class KaMActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (view != null) view.exit();
         if (video != null) video.release();
         if (KaMNative.activity == this) KaMNative.activity = null;
         super.onDestroy();
@@ -159,6 +160,9 @@ public class KaMActivity extends Activity {
 
     void onEngineStarted() {
         engineRunning = true;
+        // Content smoke test: adb shell am start -n org.kamremake.android/.KaMActivity --es kam_selftest campaigns
+        String test = getIntent().getStringExtra("kam_selftest");
+        if (test != null && view != null) view.queueEvent(() -> KaMNative.selfTest(test));
         runOnUiThread(() -> {
             if (overlay != null) {
                 root.removeView(overlay);

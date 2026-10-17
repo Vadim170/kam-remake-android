@@ -1,7 +1,6 @@
 package org.kamremake.android;
 
 import android.content.Context;
-import android.opengl.GLSurfaceView;
 import android.os.SystemClock;
 import android.text.InputType;
 import android.view.InputDevice;
@@ -11,20 +10,19 @@ import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 
-import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
 
 /**
  * Fullscreen GL surface the game renders into.
  * The surface buffer has a fixed "virtual" size (the game's screen resolution) that the hardware
  * scaler stretches to the display, so the original UI keeps its proportions and stays readable.
  */
-final class KaMView extends GLSurfaceView implements GLSurfaceView.Renderer {
+final class KaMView extends KaMSurfaceView {
     // Minimal game resolution the original UI is designed for
     static final int BASE_WIDTH = 1024;
     static final int BASE_HEIGHT = 720;
     // Smallest game resolution while playing (sidebar must still fit)
-    static final int MIN_GAME_WIDTH = 640;
+    // Message, message log and chat panels start at the sidebar edge: 224 + 600 px
+    static final int MIN_GAME_WIDTH = 830;
     static final int MIN_GAME_HEIGHT = 400; // Sidebar scrolls vertically when it does not fit
 
     private final KaMActivity activity;
@@ -46,11 +44,6 @@ final class KaMView extends GLSurfaceView implements GLSurfaceView.Renderer {
         this.activity = activity;
         this.dataDir = dataDir;
         this.uiScale = uiScale;
-        setEGLContextClientVersion(2);
-        setEGLConfigChooser(8, 8, 8, 8, 16, 8);
-        setPreserveEGLContextOnPause(true);
-        setRenderer(this);
-        setRenderMode(RENDERMODE_CONTINUOUSLY);
         setFocusable(true);
         setFocusableInTouchMode(true);
     }
@@ -98,11 +91,7 @@ final class KaMView extends GLSurfaceView implements GLSurfaceView.Renderer {
     // ---------- Renderer (GL thread) ----------
 
     @Override
-    public void onSurfaceCreated(GL10 gl, EGLConfig config) {
-    }
-
-    @Override
-    public void onSurfaceChanged(GL10 gl, int width, int height) {
+    protected void onSurfaceChanged(int width, int height) {
         if (engineFailed) return;
         if (!engineStarted) {
             engineStarted = true;
@@ -118,7 +107,7 @@ final class KaMView extends GLSurfaceView implements GLSurfaceView.Renderer {
     }
 
     @Override
-    public void onDrawFrame(GL10 gl) {
+    protected void onDrawFrame() {
         if (!engineStarted || engineFailed) return;
         KaMNative.frame();
 
