@@ -46,8 +46,8 @@ android/toolchain/extract_data.sh ~/Downloads/kam_remake_installer.exe
 
 # 3. APK
 cd android
-./build_apk.sh                                      # debug APK without data (28 MB)
-KAM_BUILD_TYPE=Release KAM_BUNDLE_DATA=1 ./build_apk.sh   # release APK with the game data inside (~1 GB)
+./build_apk.sh                                      # debug APK without data (~30 MB)
+KAM_BUILD_TYPE=Release KAM_BUNDLE_DATA=1 ./build_apk.sh   # release APK with the game data inside (~0.85 GB)
 ```
 
 The APK is in `android/app/build/outputs/apk/<debug|release>/`.

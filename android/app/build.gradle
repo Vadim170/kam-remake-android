@@ -20,12 +20,19 @@ android {
     buildTypes {
         debug { debuggable true }
         release {
-            minifyEnabled false
+            // R8: shrink and obfuscate Java/Kotlin code, drop unused resources
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }
     }
 
-    packaging { jniLibs { useLegacyPackaging true } }
+    packaging {
+        jniLibs { useLegacyPackaging true }
+        // Kotlin metadata pulled in by libVLC is not needed at runtime
+        resources { excludes += ['kotlin/**', '**/*.kotlin_builtins', 'META-INF/*.version', 'META-INF/*.kotlin_module'] }
+    }
 
     // Optional: bundle the game data into the APK (-Pkam.bundleData=true), extracted on first launch.
     // build_apk.sh prepares build/bundle/kamdata with links to the KaM Remake data folders
@@ -33,8 +40,10 @@ android {
         sourceSets { main { assets.srcDirs += "${rootDir}/build/bundle" } }
     }
     androidResources {
-        // Game files are already compressed, store them as is (faster extraction)
-        noCompress 'rxx', 'rxa', 'avi', 'mp4', 'mp2', 'mp3', 'ogg', 'wav', 'libx', 'map', 'dat', 'script', 'txt', 'xml', 'json', 'png', 'fntx', 'fnt', 'cmp', 'pdf', 'ani', 'bbm', 'lbm', 'eng', 'rus', 'ger', 'pol', 'cze', 'fre', 'hun', 'ita', 'spa'
+        // Already compressed game files are stored as is; maps, scripts, WAV etc. are deflated (lossless)
+        noCompress 'rxx', 'rxa', 'avi', 'mp4', 'mp2', 'mp3', 'ogg', 'png', 'pdf'
+        // libVLC assets not used by the game: Lua playlist/meta scripts, HRTF data
+        ignoreAssetsPattern '!lua:!hrtfs:!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
 }
 

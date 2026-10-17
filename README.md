@@ -1,48 +1,36 @@
-> **Android port:** this fork adds a native arm64 Android build of KaM Remake — see [android/README.md](android/README.md).
+# KaM Remake for Android
 
-# KaM Remake project
+Native Android (arm64) port of [KaM Remake](https://github.com/reyandme/kam_remake) — *Knights and Merchants*
+on your phone, no emulator. Original graphics and interface; adapted for phones: screen rotation,
+interface scale, touch controls.
 
+**Game data is not included** — you need your own copy of *Knights and Merchants* and the
+KaM Remake installer from [kamremake.com](https://www.kamremake.com/download/).
 
-# 🏹 About
+## Build (macOS)
 
-The KaM Remake mod reinvigorates the original “Knights and Merchants: The Shattered Kingdom” strategy game, adding extra features and modernizing the game.
+Needs: `brew install fpc innoextract`, Android SDK with NDK 29.0.13599879 and CMake, JDK 17+.
 
-See also our website: <http://www.kamremake.com/about/>
+```sh
+git clone --recurse-submodules https://github.com/Vadim170/kam-remake-android.git && cd kam-remake-android
+android/toolchain/setup_toolchain.sh                          # build tools, ~20 min, once
+android/toolchain/extract_data.sh <KaM Remake installer>.exe  # game data from your installer
+cd android && KAM_BUILD_TYPE=Release KAM_BUNDLE_DATA=1 ./build_apk.sh
+```
 
-## 🗡️ Readme and installation guide
+## Install
 
-[🇬🇧 English](Docs/Readme/getting-started_eng.md)
-[🇵🇱 Polski](Docs/Readme/getting-started_pol.md)
-[🇩🇪 Deutsch](Docs/Readme/getting-started_ger.md)
-[🇷🇺 Русский](Docs/Readme/getting-started_rus.md)
+Copy `android/app/build/outputs/apk/release/app-release.apk` to the phone and open it (or `adb install`).
+On the first start the game unpacks its data (~1 min).
 
-## 📜 Key features
+**Controls:** tap — click, long press — right click, pinch — zoom, drag — scroll, Back — Esc,
+three-finger tap — interface size.
 
-- multiplayer with support for up to 12 players, spectators, map/save transfers in lobby, randomly generated maps - and much more...
-- modern screen resolution and zoom in/out
-- tons of community maps for singleplayer and multiplayer - including custom co-op maps and campaigns
-- AI for scenarios and skirmish maps reworked from scratch
-- scripting for deep customisation of "special maps"
+More: [android/README.md](android/README.md) · original readme: [README.KaM_Remake.md](README.KaM_Remake.md) · license: AGPL v3
 
-## ⚔️ Downloads
+---
 
-The latest stable version is always available at <https://www.kamremake.com/download/>
-
-## 🏰 Community and Feedback
-
-Join our community at <https://discord.gg/UkkYceR>. We would love your comments, suggestions, compliments, etc.
-If you can offer some help in Delphi coding, menu design, documentation, graphics, sounds, translation or ideas for improvement - please drop us an email or write on Discord. 
-
-# ⛏️ Technical details and contributing code to KaM Remake
-
-See [here](Docs/Readme/technical.md)
-
-
-
-
-
-
-
- 
-
-
+**По-русски.** Нативный порт KaM Remake под Android (arm64), без эмулятора. Данных игры в репозитории нет —
+нужна своя копия Knights and Merchants и установщик KaM Remake. Сборка — три команды выше, затем установить
+APK на телефон; при первом запуске игра распакует данные. Управление: тап — клик, долгое нажатие — правый клик,
+щипок — масштаб, «Назад» — Esc, тап тремя пальцами — размер интерфейса.

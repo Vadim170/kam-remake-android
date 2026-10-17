@@ -16,10 +16,9 @@ rm -f "$JNI"/*.res "$JNI"/*.o
 GRADLE_ARGS=()
 if [ "${KAM_BUNDLE_DATA:-0}" = 1 ]; then
   SRC="${KAM_DATA:-$TC/kamres/app}"
-  rm -rf "$ANDROID_DIR/build/bundle"; mkdir -p "$ANDROID_DIR/build/bundle/kamdata"
-  for d in data Campaigns Maps MapsMP Music Sounds Tutorials; do ln -s "$SRC/$d" "$ANDROID_DIR/build/bundle/kamdata/$d"; done
-  # File list with sizes for the extractor
-  (cd "$SRC" && find data Campaigns Maps MapsMP Music Sounds Tutorials -type f -exec stat -f '%z %N' {} +) > "$ANDROID_DIR/build/bundle/kamdata.lst"
+  # One copy of every unique file (by content) is linked into the APK assets,
+  # kamdata.lst maps each game file to the asset it is restored from
+  python3 "$ANDROID_DIR/tools/make_data_bundle.py" "$SRC" "$ANDROID_DIR/build/bundle"
   GRADLE_ARGS+=(-Pkam.bundleData=true)
 fi
 cd "$ANDROID_DIR"

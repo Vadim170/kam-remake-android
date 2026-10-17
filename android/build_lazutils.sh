@@ -21,5 +21,5 @@ uses LazUTF8, LConvEncoding, LazFileUtils, FileUtil, Laz2_DOM, Laz2_XMLRead, Laz
 implementation
 end.
 PAS
-"$FPC_SRC/compiler/ppcrossa64" -Tandroid -Paarch64 -Cg -MObjFPC -Scghi -O2 -g -gl \
+"$FPC_SRC/compiler/ppcrossa64" -Tandroid -Paarch64 -Cg -CX -MObjFPC -Scghi -O2 -g -gl \
   -Fu"$FPC_SRC/rtl/units/aarch64-android" "${FU[@]}" -Fu"$LAZ" -Fi"$LAZ" -FU"$OUT" "$OUT/lazutils_all.pas"

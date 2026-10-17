@@ -33,25 +33,26 @@ final class DataInstaller {
     }
 
     static void install(AssetManager am, File dir, Progress progress) throws IOException {
-        List<String> files = new ArrayList<>();
+        // kamdata.lst: "<size>\t<game path>\t<asset path>" (duplicates share one asset)
+        List<String[]> files = new ArrayList<>();
         long total = 0;
         try (BufferedReader r = new BufferedReader(new InputStreamReader(am.open("kamdata.lst"), "UTF-8"))) {
             String line;
             while ((line = r.readLine()) != null) {
-                int sp = line.indexOf(' ');
-                if (sp <= 0) continue;
-                total += Long.parseLong(line.substring(0, sp));
-                files.add(line.substring(sp + 1));
+                String[] p = line.split("\t");
+                if (p.length < 3) continue;
+                total += Long.parseLong(p[0]);
+                files.add(new String[]{p[1], p[2]});
             }
         }
         byte[] buf = new byte[1 << 20];
         long done = 0;
-        for (String rel : files) {
-            File out = new File(dir, rel);
+        for (String[] f : files) {
+            File out = new File(dir, f[0]);
             File parent = out.getParentFile();
             if (parent != null && !parent.isDirectory() && !parent.mkdirs())
                 throw new IOException("Can't create " + parent);
-            try (InputStream in = am.open("kamdata/" + rel); OutputStream os = new FileOutputStream(out)) {
+            try (InputStream in = am.open("kamdata/" + f[1]); OutputStream os = new FileOutputStream(out)) {
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     os.write(buf, 0, n);
